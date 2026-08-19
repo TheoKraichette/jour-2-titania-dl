@@ -703,7 +703,56 @@ hasard à 0,056 — est ce que le modèle comprend réellement d'une description
 
 ### Phase 9 — rendre des comptes sur trois décisions
 
-(section suivante)
+La part de chaque mot dans une décision est mesurée en retirant le mot et en
+regardant ce que la confiance du modèle dans sa prédiction y perd. Trois relevés
+de la partie test, repassés dans le modèle de la phase 8 — trois figures :
+`figures/phase09_dossier1_reussi.png`, `phase09_dossier2_rate.png`,
+`phase09_dossier3_hesitant.png`.
+
+#### Dossier 1 — le réussi
+
+> « Metalic saucer hovers over us in broad daylight at around 500 feet low »
+> — vraie forme : disk. Prédiction : **disk**, confiance 100 %.
+
+Un seul mot a décidé : **saucer** (part de 0,595 ; le deuxième mot, « hovers »,
+pèse 85 fois moins). La machine a retenu qu'une soucoupe est un disque — le mot
+« disk » étant interdit, elle s'est reportée sur son synonyme, que ma liste ne
+couvre pas. Elle a ignoré tout le reste, notamment « hovers » et « 500 feet
+low », qu'un humain aurait lus comme des indices de manœuvre et d'altitude. Ce
+succès est donc à moitié rassurant : la recopie du mot de la forme est morte, la
+recopie du synonyme se porte bien.
+
+#### Dossier 2 — le raté
+
+> « Saucer sighting » — vraie forme : circle. Prédiction : **disk**, confiance 98 %.
+
+Le même mot, saucer (part de 0,902), la même conclusion — et l'étiquette dit
+circle. La machine n'a rien fait d'absurde : c'est le témoignage qui ne contient
+rien d'autre, et c'est l'étiquette qui est discutable. Ce raté n'apprend presque
+rien sur le modèle et beaucoup sur le jeu de données : **les formes sont choisies
+par les témoins**, et deux témoins devant le même objet cochent l'un « disk »,
+l'autre « circle ». Une partie du plafond de score de tout l'acte 2 est là — les
+classes circle, disk, sphere et oval se recouvrent dans les yeux mêmes de ceux
+qui étiquettent.
+
+#### Dossier 3 — l'hésitant
+
+> « Lights than formed triangle shape oblect flying overhead » — vraie forme :
+> triangle. Prédiction : **triangle** à 16 %, devant **changing** à 16 %.
+
+Les mots « lights » et « triangle » ont été censurés : le modèle ne voit que
+« than formed shape oblect flying overhead ». Ce qui le tire vers triangle :
+**shape** (0,075). Ce qui le tire vers changing : **formed** (−0,025) — un verbe
+de transformation, lu comme un indice de forme changeante alors que le témoin
+décrivait des lumières *formant* un triangle. Et « oblect », faute de frappe
+d'« object », tombe en mot inconnu : un humain l'aurait corrigée sans y penser.
+L'hésitation est donc exactement là où elle doit être : le seul indice fort du
+témoignage a été censuré, et ce qui reste est ambigu au point que deux lectures
+se partagent 16 % chacune.
+
+Ces trois pages disent pourquoi la machine a répondu ça, mot par mot, sans
+qu'il soit besoin de savoir ce qu'est un poids. C'est ce qui manquait au dossier
+du disparu.
 
 ---
 
