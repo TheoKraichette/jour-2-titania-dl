@@ -341,6 +341,8 @@ def phase03(dossier, iterations=25, taille_lot=256, pas=2e-3, graines=(0, 1, 2))
         f1_lineaire=mesures.f1_moyen(predits_lineaire, vrais, dossier.classes),
         taux_reseau=moyenne("taux"),
         f1_reseau=moyenne("f1"),
+        taux_pire=min(r["taux"] for r in resultats),
+        f1_pire=min(r["f1"] for r in resultats),
         etendue_taux=etendue("taux"),
         etendue_f1=etendue("f1"),
         temps_lineaire=temps_lineaire,
@@ -505,19 +507,121 @@ def phase04(dossier, iterations=8, taille_lot=256):
                            panne2=taux_decale, panne3=pertes[-1], hasard=hasard)
 
 
-def phase05(dossier):
-    """Le budget de calcul."""
+# Le score que la phase 5 doit réatteindre, mesuré en phase 3 sur trois
+# initialisations. Utilisé quand la phase 5 tourne seule ; si la phase 3 vient de
+# tourner dans le même processus, ses chiffres frais priment.
+PHASE3 = {"taux_pire": 0.5385, "f1_pire": 0.4975}
+
+
+def phase05(dossier, graines=(0, 1, 2)):
+    """Le budget de calcul.
+
+    Réatteindre le score de la phase 3, même découpe et mêmes classes, en nettement
+    moins de temps machine. La référence est la configuration exacte de la phase 3,
+    rejouée ici même : les deux temps sortent du même chronomètre, sur la même
+    machine, dans le même processus.
+
+    Chaque réglage est changé seul et mesuré seul. Un réglage sans mesure ne compte
+    pas, deux réglages en même temps non plus.
+    """
     titre(5, "le budget de calcul")
-    a_faire(
-        """
-        Réatteindre le score de la phase 3, même découpe et mêmes classes, en nettement
-        moins de temps machine. Temps mesuré dans le code (bureau.entrainement.Chrono),
-        affiché, et sur la même machine dans les deux cas.
-        Une figure dont l'abscisse est le temps écoulé, pas le nombre de passages, avec
-        l'ancienne et la nouvelle courbe superposées.
-        Un réglage changé sans mesure ne compte pas ; deux réglages changés en même temps
-        non plus. Un par un, chacun avec son gain et son coût en score.
-        """
+
+    entrees = {}
+    for partie in ("apprentissage", "validation", "test"):
+        entrees[partie], entrees[f"cibles_{partie}"] = tenseurs(dossier, partie)
+    vrais = entrees["cibles_test"]
+    effectifs = torch.bincount(entrees["cibles_apprentissage"]).float()
+    poids = effectifs ** -0.25
+    poids = poids / poids.mean()
+
+    def essai(intitule, iterations, taille_lot, graine=0):
+        predits, _, historique, secondes = essai_du_reseau(
+            dossier, entrees, poids, graine, iterations, taille_lot, 2e-3)
+        resultat = {
+            "iterations": iterations,
+            "taille_lot": taille_lot,
+            "taux": mesures.taux_de_reussite(predits, vrais),
+            "f1": mesures.f1_moyen(predits, vrais, dossier.classes),
+            "secondes": secondes,
+            "historique": historique,
+        }
+        print(f"  {intitule:<46}{secondes:>7.1f} s   "
+              f"taux {resultat['taux']:.4f}   F1 {resultat['f1']:.4f}")
+        return resultat
+
+    reference = essai("référence — la phase 3 (25 passages, lots 256)", 25, 256)
+
+    # Réglage 1 : s'arrêter à 8 passages. La phase 3 a montré que le meilleur point
+    # de validation tombe au passage 5 ou 6 — les passages suivants sont du temps
+    # machine payé pour surapprendre, et l'état retenu est le même.
+    reglage1 = essai("réglage 1 — 8 passages au lieu de 25", 8, 256)
+
+    # Réglage 2 : des lots de 512 au lieu de 256. Moitié moins de tours de boucle
+    # Python par passage ; le calcul par relevé ne change pas.
+    reglage2 = essai("réglage 2 — et des lots de 512", 8, 512)
+
+    # Un réglage ne se garde que s'il apporte un gain de temps réel — au-delà des
+    # ±5 % de bruit de mesure constatés sur cette machine — ET ne coûte pas le
+    # score. La référence de score est le PIRE essai de la phase 3.
+    seuils = dict(PHASE3)
+    if 3 in dossier.scores:
+        seuils = {"taux_pire": dossier.scores[3]["taux_pire"],
+                  "f1_pire": dossier.scores[3]["f1_pire"]}
+    gagne_du_temps = reglage2["secondes"] < 0.95 * reglage1["secondes"]
+    tient_le_score = (reglage2["taux"] >= seuils["taux_pire"]
+                      and reglage2["f1"] >= seuils["f1_pire"])
+    if gagne_du_temps and tient_le_score:
+        retenu, config = reglage2, "8 passages, lots de 512"
+    else:
+        retenu, config = reglage1, "8 passages, lots de 256"
+        raison = "aucun gain de temps" if not gagne_du_temps else "coûte du score"
+        print(f"  → réglage 2 : {raison} — rendu, mais pas retenu")
+    print(f"\n  configuration retenue : {config}")
+
+    # Le score final ne doit pas être inférieur à celui de la phase 3 : validé sur
+    # les mêmes trois initialisations, jugé sur le pire essai.
+    finals = [retenu]
+    for graine in graines[1:]:
+        finals.append(essai(f"  configuration retenue, initialisation {graine}",
+                            retenu["iterations"], retenu["taille_lot"], graine))
+    pire_taux = min(r["taux"] for r in finals)
+    pire_f1 = min(r["f1"] for r in finals)
+
+    facteur = reference["secondes"] / retenu["secondes"]
+    print(f"\n  temps de la phase 3   : {reference['secondes']:.1f} s")
+    print(f"  temps de la phase 5   : {retenu['secondes']:.1f} s")
+    print(f"  facteur               : ×{facteur:.1f}")
+    print(f"  score (pire des {len(finals)})   : {pire_taux:.4f} / {pire_f1:.4f}"
+          f"   plancher de la phase 3 : {seuils['taux_pire']:.4f} / "
+          f"{seuils['f1_pire']:.4f}")
+    tient = pire_taux >= seuils["taux_pire"] and pire_f1 >= seuils["f1_pire"]
+    print("  " + ("✓ le score tient, le facteur est acquis" if tient
+                  else "✗ le score est en dessous : le gain de temps ne compte pas"))
+
+    # La figure du Conseil : l'abscisse est le temps écoulé, pas le nombre de
+    # passages. Les deux courbes de validation superposées.
+    figures.courbes_de_perte(
+        {
+            f"phase 3 — {reference['secondes']:.0f} s":
+                (reference["historique"]["temps"],
+                 reference["historique"]["perte_validation"]),
+            f"phase 5 — {retenu['secondes']:.0f} s":
+                (retenu["historique"]["temps"],
+                 retenu["historique"]["perte_validation"]),
+        },
+        "phase05_budget.png",
+        "Phase 5 — la même perte de validation, en une fraction du temps",
+        abscisse="secondes écoulées",
+    )
+
+    return dossier.retenir(
+        5,
+        temps_reference=reference["secondes"],
+        temps_final=retenu["secondes"],
+        facteur=facteur,
+        taux_pire=pire_taux,
+        f1_pire=pire_f1,
+        configuration=config,
     )
 
 
