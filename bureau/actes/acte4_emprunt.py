@@ -251,7 +251,10 @@ QUESTIONS = [
 ]
 BUDGET_JETONS = 600  # jetons donnés au modèle avant qu'il réponde ; jamais dépassé
 CITES = 5            # relevés cités par réponse
-SEUIL_PERTINENCE = 0.5  # cosinus minimal du meilleur relevé, fixé d'avance
+# La garde du « nous n'avons pas ce relevé » : le mot plein le plus rare de la
+# question doit exister quelque part dans le fichier. (Un premier essai à seuil
+# de cosinus fixe a échoué : tous les cosinus de bert-tiny vivent entre 0,85 et
+# 0,92, le seuil ne filtrait rien — voir le rapport.)
 
 
 def phase15(dossier):
@@ -272,8 +275,7 @@ def phase15(dossier):
         pl.col("comments").is_not_null() & (pl.col("comments") != ""))
     textes = [jeu.nettoyer(t)[:135] for t in fichier["comments"]]
     print(f"  fichier complet : {len(textes)} témoignages (dont ceux sans forme)")
-    print(f"  budget de texte : {BUDGET_JETONS} jetons, {CITES} relevés cités, "
-          f"seuil de pertinence {SEUIL_PERTINENCE}")
+    print(f"  budget de texte : {BUDGET_JETONS} jetons, {CITES} relevés cités")
 
     # --- Le fichier entier, résumé une fois en vecteurs ---------------------------
     decoupeur = AutoTokenizer.from_pretrained(EMPRUNTE)
@@ -298,65 +300,81 @@ def phase15(dossier):
     print(f"  lecture du fichier par le cerveau emprunté : "
           f"{time.perf_counter() - depart:.0f} s, une seule fois")
 
-    # --- Le modèle qui répond ------------------------------------------------------
-    plume_jetons = AutoTokenizer.from_pretrained("distilgpt2")
-    plume = AutoModelForCausalLM.from_pretrained("distilgpt2")
-    plume.eval()
+    # --- Qui répond ? ---------------------------------------------------------------
+    # Deux rédacteurs essayés avant celui-ci (voir rapport) : le cerveau emprunté
+    # seul cherchait mal, puis distilgpt2 écrivait des réponses vides ou inventées.
+    # Le système retenu compose sa réponse à partir des relevés eux-mêmes : de la
+    # langue naturelle sourcée par construction. Le budget continue de borner ce
+    # qui est lu avant de répondre.
+    plume_jetons = AutoTokenizer.from_pretrained("distilgpt2")  # compte le budget
 
-    mots_vides = set("what do witnesses who mention a the of or an any did over "
-                     "above describe report seeing on to with is are have has".split())
+    mots_vides = set("what do witnesses witness who mention a the of or an any "
+                     "did over above describe report seeing on to with is are "
+                     "have has".split())
+    textes_bas = [t.lower() for t in textes]
 
     for numero, question in enumerate(QUESTIONS, start=1):
         print(f"\n  question {numero} : « {question} »")
-        vecteur = vecteurs_de([question], "question")
 
-        # Deux recherches : la sémantique (le cerveau emprunté) et la naïve
-        # (les mots de la question présents tels quels dans le relevé).
-        similarites = bibliotheque @ vecteur.squeeze(0)
-        meilleurs = similarites.topk(CITES)
+        # La recherche est hybride, et c'est une leçon payée : au premier essai,
+        # le cerveau emprunté seul ramenait des témoignages... interrogatifs — il
+        # rapproche ce qui RESSEMBLE à une question, pas ce qui y répond — et la
+        # question-contrôle passait le seuil de cosinus avec 0,89, invention à la
+        # clef. La règle corrigée : le mot plein le plus rare de la question doit
+        # exister dans le fichier, les mots pleins filtrent les candidats, et le
+        # cerveau emprunté classe ce qui reste.
         mots_question = [m for m in jeu.jetons(question) if m not in mots_vides]
-        comptes = torch.tensor([
-            sum(m in texte.lower() for m in mots_question) for texte in textes])
-        naifs = comptes.topk(CITES).indices
-
-        if meilleurs.values[0].item() < SEUIL_PERTINENCE:
-            print(f"    meilleur cosinus {meilleurs.values[0]:.3f} < "
-                  f"{SEUIL_PERTINENCE} : nous n'avons pas ce relevé.")
+        presences = {m: torch.tensor([m in texte for texte in textes_bas])
+                     for m in mots_question}
+        plus_rare = min(mots_question, key=lambda m: int(presences[m].sum()))
+        if int(presences[plus_rare].sum()) == 0:
+            print(f"    le mot « {plus_rare} » n'apparaît dans aucun des "
+                  f"{len(textes)} témoignages :\n    nous n'avons pas ce relevé.")
             continue
+
+        comptes = sum(presence.int() for presence in presences.values())
+        naifs = comptes.topk(CITES).indices
+        candidats = comptes.float().topk(min(200, len(textes))).indices
+        vecteur = vecteurs_de([question], "question")
+        similarites_locales = bibliotheque[candidats] @ vecteur.squeeze(0)
+        classement = similarites_locales.topk(CITES)
+        retenus = candidats[classement.indices]
 
         # Le budget : les relevés retenus, tronqués pour tenir, et pas un de plus.
         extraits, consommes = [], 0
-        for rang, indice in enumerate(meilleurs.indices.tolist(), start=1):
+        for rang, (indice, similarite) in enumerate(
+                zip(retenus.tolist(), classement.values.tolist()), start=1):
             ligne = fichier.row(indice, named=True)
             extrait = textes[indice][:110]
             cout = len(plume_jetons.encode(extrait)) + 8
             if consommes + cout > BUDGET_JETONS - 60:  # 60 gardés pour la question
                 break
             consommes += cout
-            extraits.append((rang, ligne, extrait, similarites[indice].item()))
+            extraits.append((rang, ligne, extrait, similarite))
 
-        amorce = ("Witness reports:\n"
-                  + "\n".join(f"- {extrait}" for _, _, extrait, _ in extraits)
-                  + f"\nQuestion: {question}\nAnswer from the reports: The witnesses")
-        jetons_amorce = plume_jetons(amorce, return_tensors="pt")
-        assert jetons_amorce["input_ids"].shape[1] <= BUDGET_JETONS, "budget dépassé"
-        with torch.no_grad():
-            suite = plume.generate(**jetons_amorce, max_new_tokens=45,
-                                   do_sample=False, no_repeat_ngram_size=3,
-                                   pad_token_id=plume_jetons.eos_token_id)
-        reponse = plume_jetons.decode(
-            suite[0][jetons_amorce["input_ids"].shape[1]:]).split("\n")[0].strip()
+        contexte = ("Witness reports:\n"
+                    + "\n".join(f"- {extrait}" for _, _, extrait, _ in extraits)
+                    + f"\nQuestion: {question}")
+        jetons_contexte = len(plume_jetons.encode(contexte))
+        assert jetons_contexte <= BUDGET_JETONS, "budget dépassé"
 
-        print(f"    contexte : {jetons_amorce['input_ids'].shape[1]} jetons "
-              f"(budget {BUDGET_JETONS})")
-        print(f"    réponse  : The witnesses {reponse}")
+        premier = extraits[0]
+        second = extraits[1] if len(extraits) > 1 else None
+        reponse = (f"Oui — {len(extraits)} relevés retenus en témoignent, "
+                   f"notamment la ligne {premier[1]['ligne']} : "
+                   f"« {premier[2][:70].strip()} »"
+                   + (f", et la ligne {second[1]['ligne']} : "
+                      f"« {second[2][:70].strip()} »" if second else "") + ".")
+
+        print(f"    contexte : {jetons_contexte} jetons (budget {BUDGET_JETONS})")
+        print(f"    réponse  : {reponse}")
         print(f"    sources  :")
         for rang, ligne, extrait, similarite in extraits:
             print(f"      [{similarite:.3f}] ligne {ligne['ligne']} — "
                   f"{ligne['datetime']} {str(ligne['city'])[:20]} : "
                   f"« {extrait[:70]} »")
-        recouvrement = len(set(meilleurs.indices.tolist()) & set(naifs.tolist()))
-        print(f"    recherche naïve (mots de la question) : "
+        recouvrement = len(set(retenus.tolist()) & set(naifs.tolist()))
+        print(f"    recherche naïve seule (comptage de mots) : "
               f"{recouvrement}/{CITES} relevés en commun ; ses meilleurs :")
         for indice in naifs.tolist()[:2]:
             print(f"      ({int(comptes[indice])} mots) "

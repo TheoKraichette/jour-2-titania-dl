@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 14.
+> Phases traitées : 0 à 15.
 
 ---
 
@@ -932,16 +932,66 @@ côté, 0,03 Mo à sauvegarder.
 
 ### Phase 15 — le Conseil pose des questions, vous citez vos sources
 
-Liste de questions, **figée avant toute mesure** :
+La liste, figée avant toute mesure (le fichier est en anglais, les questions
+aussi ; la sixième est le contrôle — rien dans le fichier ne peut y répondre) :
 
-1.
-2.
-3.
+1. What do witnesses who mention a sound or a noise describe? *(que décrivent
+   les témoins qui parlent de bruit ?)*
+2. What do witnesses report seeing over water or a lake?
+3. Do witnesses describe objects landing on the ground?
+4. What colors do witnesses associate with fast moving objects?
+5. Do sightings above cities have a particular shape?
+6. Did any witness describe an elephant flying over a city? *(contrôle)*
 
-Budget de texte donné au modèle avant qu'il réponde : **à fixer ici**, jamais dépassé.
+**Budget : 600 jetons** donnés au système avant qu'il réponde, 5 relevés cités au
+plus, jamais dépassé (vérifié par une assertion ; les contextes réels font 115 à
+136 jetons). La même question posée deux fois ramène les mêmes relevés : tout est
+déterministe, vérifié par le code.
 
-**À rendre :** la proportion de réponses dont les relevés cités soutiennent
-réellement ce qui est affirmé, et la comparaison avec une recherche naïve par mots.
+#### Trois versions du système — deux pannes payées
+
+**Version 1, écartée.** Le cerveau emprunté seul (bert-tiny, un vecteur par
+témoignage, cosinus) ramène... des témoignages interrogatifs : à la question du
+bruit, il cite « Can the Silent approach of UFOS be heard???? ». Il rapproche ce
+qui *ressemble* à une question, pas ce qui y répond. Pire : tous ses cosinus
+vivent entre 0,85 et 0,92, et mon seuil de pertinence à 0,5 ne filtrait rien — la
+question-contrôle passait avec 0,89 et distilgpt2 **inventait** : « The witnesses
+said that the elephant flew over a town in the south of the city. » L'invention
+exacte que le Bureau redoute.
+
+**Version 2, écartée.** Recherche corrigée (voir ci-dessous), mais distilgpt2
+comme rédacteur : ses réponses sont vides (« The witnesses are not the
+witnesses. ») ou inventées (« San Francisco », absent des sources). Proportion
+correctement sourcée : 1/6 — la seule bonne réponse était le refus du contrôle.
+
+**Version retenue.** La recherche est hybride : le mot plein le plus rare de la
+question doit exister dans le fichier — sinon « nous n'avons pas ce relevé » ;
+« elephant » n'apparaît dans aucun des 88 644 témoignages, le contrôle est
+refusé proprement — puis les mots pleins filtrent 200 candidats, que le cerveau
+emprunté classe par cosinus. Et le système compose sa réponse **à partir des
+relevés retenus eux-mêmes**, lignes du fichier citées : de la langue naturelle
+sourcée par construction, qui ne peut rien affirmer qu'un relevé ne porte.
+
+#### La proportion de réponses correctement sourcées : 3/6, jugée sévèrement
+
+| Question | Verdict | Pourquoi |
+|---|---|---|
+| 1 — le bruit | ✓ | les sources décrivent des sons (« Heard "Alien" Type Noises ») |
+| 2 — l'eau, les lacs | ✓ | Lake Erie, « hovering above the lake », Lake Superior |
+| 3 — les atterrissages | ✗ | contresens : « Battle Ground, WA » est un nom de ville, pas un atterrissage |
+| 4 — les couleurs | ✗ | les sources parlent d'objets rapides, aucune ne nomme une couleur |
+| 5 — les villes | ✗ | la première source parle d'un pâturage, pas d'une ville |
+| 6 — l'éléphant (contrôle) | ✓ | refus motivé : le mot n'existe nulle part dans le fichier |
+
+La comparaison avec la recherche naïve (comptage de mots seul) : 0 à 1 relevé
+commun sur 5 selon la question — et sur la question du bruit, la naïve trouvait
+d'ailleurs un excellent relevé (« It sounded like a slow moving propeller, with
+humming noises »). Les échecs restants (3, 4, 5) ont une cause commune : la
+recherche capte le **thème**, pas le **sens de la question** — « ground » peut
+être un toponyme, « quelles couleurs » demande une réponse que la recherche ne
+sait pas extraire. Le Bureau sait maintenant précisément ce que vaut son système
+de questions : fiable quand la question est thématique, aveugle au reste, et
+incapable d'inventer.
 
 ### Phase 16 — faire entrer le tout dans le vaisseau
 
