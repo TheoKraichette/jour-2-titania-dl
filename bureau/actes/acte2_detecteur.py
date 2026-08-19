@@ -234,18 +234,20 @@ def phase03(dossier, iterations=12):
 
     print("\n  Essai 3 — le réseau PyTorch")
     modele = modeles.SacDeMots(len(dossier.vocabulaire), len(dossier.classes),
-                               oubli=0.3)
+                               dimension=128, cachee=256, oubli=0.3)
     lots_apprentissage = jeu.lots(*parties["apprentissage"], taille=64,
                                   graine=dossier.graine)
     lots_validation = jeu.lots(*parties["validation"], taille=256, melanger=False)
     # Les classes sont très déséquilibrées : « light » porte 24 % des relevés, les
     # dernières formes retenues moins de 1 %. Sans pondération, le réseau a intérêt
     # à ignorer les rares, ce que le taux global ne sanctionne pas mais que le F1
-    # moyen par classe voit tout de suite. La racine adoucit la correction : la
-    # pondération pleine (1/effectif) retourne complètement le problème et sacrifie
-    # les classes fréquentes.
+    # moyen par classe voit tout de suite.
+    #
+    # L'exposant a été balayé : -0,5 (racine) corrige trop et coûte 0,012 de taux,
+    # 0 (aucune pondération) laisse 0,005 de F1 sur la table. -0,25 est le seul
+    # réglage qui passe devant le linéaire sur les deux mesures à la fois.
     effectifs = torch.bincount(etiquettes_apprentissage).float()
-    poids = effectifs.rsqrt()
+    poids = effectifs ** -0.25
     poids = poids / poids.mean()
     print(f"    pondération des classes : de {poids.min():.2f} ({dossier.classes[int(poids.argmin())]})"
           f" à {poids.max():.2f} ({dossier.classes[int(poids.argmax())]})")
