@@ -343,6 +343,52 @@ passe derrière. C'est le sujet annoncé pour la phase 8, rencontré cinq phases
 tôt, et ça règle une question de méthode : je rends les deux, toujours, et je ne
 choisis pas celui qui m'arrange.
 
+#### Le réglage 6, et la victoire qui n'existait pas
+
+J'ai ensuite balayé quatre configurations dans un même passage, sur la même découpe
+et les mêmes classes :
+
+| Configuration | Taux | F1 moyen |
+|---|---|---|
+| le linéaire à battre | 0,537 | 0,494 |
+| dimension 128, pondération en 1/√effectif | 0,535 | 0,492 |
+| **dimension 128, pondération en 1/effectif^0,25** | **0,541** | **0,498** |
+| dimension 128, sans pondération | 0,542 | 0,493 |
+| dimension 256, pondération en 1/effectif^0,25 | 0,540 | 0,486 |
+
+J'avais donc mon résultat : une configuration qui passe devant le linéaire sur les
+deux mesures. J'ai failli m'arrêter là et l'écrire.
+
+Sauf que l'écart est de 0,004 sur les deux mesures, et que l'incertitude
+d'échantillonnage sur 10 935 relevés de test vaut déjà 0,005. J'ai donc relancé le
+**même** entraînement quatre fois, découpe et classes identiques, en ne changeant que
+l'initialisation du réseau :
+
+| Initialisation | Taux | F1 moyen |
+|---|---|---|
+| 0 | 0,5409 | 0,4978 |
+| 1 | 0,5428 | 0,4983 |
+| 2 | 0,5342 | 0,4914 |
+| 3 | 0,5361 | 0,4795 |
+| **moyenne** | **0,5385** | **0,4918** |
+| étendue | 0,0086 | 0,0188 |
+
+Le linéaire est à 0,537 et 0,494. Sur quatre essais, mon réseau est donc à **+0,0015
+de taux et −0,0022 de F1**, pour une étendue de 0,0086 et 0,0188. Les deux écarts
+sont quatre à huit fois plus petits que la dispersion du réseau lui-même.
+
+**Il ne bat pas le linéaire.** Le 0,541 / 0,498 du balayage était l'initialisation 0,
+c'est-à-dire la plus favorable des quatre. Si je m'étais contenté du premier tableau,
+j'aurais présenté au Conseil un tirage chanceux en le faisant passer pour un
+résultat — exactement ce que le disparu a fait avec son 51.
+
+Ce que ça m'apprend, et qui vaut pour tout le reste du dossier : **avant de comparer
+deux montages, il faut connaître la dispersion de chacun.** Un écart plus petit
+qu'elle n'existe pas. Toutes les comparaisons qui suivent — phase 5 sur le temps,
+phase 6 après empilement, phase 8 après interdiction du vocabulaire — se liront avec
+cette étendue en tête : sur cette tâche, tout écart de score inférieur à 0,01 est
+indistinguable de zéro.
+
 ### Phase 4 — le carnet de pannes
 
 | Panne | Le geste exact | Signature sur les courbes | Le test qui la distingue |
