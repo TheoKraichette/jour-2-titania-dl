@@ -241,6 +241,7 @@ def phase03(dossier, iterations=12):
         historique = entrainement.entrainer(
             modele, lots_apprentissage, lots_validation,
             iterations=iterations, pas=3e-3, releve_tous_les=1,
+            garder_le_meilleur=True,
         )
     predits, vrais = entrainement.predire(
         modele, jeu.lots(*parties["test"], taille=256, melanger=False)

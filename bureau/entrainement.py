@@ -60,15 +60,23 @@ def entrainer(
     perte=None,
     releve_tous_les=1,
     bavard=True,
+    garder_le_meilleur=False,
+    decroissance=1e-2,
 ):
     """Une boucle d'apprentissage nue, sans magie et sans dépendance à la tâche.
 
     `lots_apprentissage` : un itérable rejouable de (entrées, cibles).
     Rend l'historique : {"passage", "temps", "perte", "perte_validation"}.
+
+    `garder_le_meilleur` : rendre le modèle dans l'état où sa perte de validation
+    était la plus basse, et non dans son dernier état. Sans ça, on livre le modèle
+    au moment où il a le plus surappris — c'est le dernier passage qui est le pire.
     """
     perte = perte or torch.nn.CrossEntropyLoss()
-    optimiseur = torch.optim.AdamW(modele.parameters(), lr=pas)
+    optimiseur = torch.optim.AdamW(modele.parameters(), lr=pas,
+                                   weight_decay=decroissance)
     historique = {"passage": [], "temps": [], "perte": [], "perte_validation": []}
+    meilleure, meilleur_etat, meilleur_passage = float("inf"), None, None
 
     debut = time.perf_counter()
     for iteration in range(1, iterations + 1):
@@ -93,12 +101,22 @@ def entrainer(
             if lots_validation is not None
             else float("nan")
         )
+        if historique["perte_validation"][-1] < meilleure:
+            meilleure, meilleur_passage = historique["perte_validation"][-1], iteration
+            if garder_le_meilleur:
+                meilleur_etat = {n: v.detach().clone()
+                                 for n, v in modele.state_dict().items()}
         if bavard and (iteration % (releve_tous_les * 10) == 0 or iteration == iterations):
             ligne = f"  passage {iteration:4d}  perte {historique['perte'][-1]:.4f}"
             if lots_validation is not None:
                 ligne += f"  validation {historique['perte_validation'][-1]:.4f}"
             print(f"{ligne}  ({historique['temps'][-1]:.1f} s)")
 
+    if garder_le_meilleur and meilleur_etat is not None:
+        modele.load_state_dict(meilleur_etat)
+        print(f"  état retenu : passage {meilleur_passage} "
+              f"(validation {meilleure:.4f}), et non le dernier")
+    historique["meilleur_passage"] = meilleur_passage
     return historique
 
 
