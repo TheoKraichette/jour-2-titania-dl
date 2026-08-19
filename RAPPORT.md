@@ -1076,6 +1076,24 @@ Cinq faux témoignages au réglage retenu, mélangés à cinq vrais relevés du
 fichier, l'ordre tiré au sort. Le tri a été fait par une personne qui ne savait
 pas lesquels étaient lesquels.
 
-*(résultat du tri : en attente — sera rendu tel quel, même mauvais)*
+Le protocole : un mélange neuf a été généré (nouveaux faux au réglage retenu,
+nouveaux vrais relevés, ordre tiré au sort), la clef écrite dans un fichier
+scellé, ouvert seulement après remise du tri.
+
+**Résultat : 10 sur 10 — le trieur a démasqué tous les faux.** Il est rendu tel
+quel, et il est mauvais pour le faussaire. Ce qui a trahi la machine : la
+répétition en boucle (« on the north side of the street on the south side of
+the street on the south side of… »), les phrases qui ne décrivent rien (« There
+are no lights anywhere near the horizon ») et la logique flottante. Ce qui a
+sauvé les vrais : leurs fautes d'orthographe authentiques (« luminiscent »,
+« dissappears »), leurs détails géographiques précis (« southside of
+Indianapolis, saw more on eastside ») et leurs points d'exclamation.
+
+La conclusion pour le Bureau : au réglage recommandé, le faux témoignage
+ressemble à un vrai *en moyenne* — longueur, vocabulaire, platitude — mais un
+lecteur attentif le démasque sur les détails que le style seul ne fabrique
+pas : l'ancrage dans un lieu, les fautes d'un humain pressé, la cohérence d'une
+scène réellement vue. Le Conseil peut dormir : sa salle de lecture reste plus
+forte que son faussaire.
 
 
