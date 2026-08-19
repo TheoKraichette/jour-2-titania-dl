@@ -12,19 +12,25 @@ from torch import nn
 
 
 class SacDeMots(nn.Module):
-    """Le montage de départ : chaque mot devient un vecteur, on en fait la moyenne.
+    """Le montage de départ : chaque mot devient un vecteur, on résume le relevé.
 
     Il ignore complètement l'ordre — c'est assumé et c'est le point de départ de
     l'acte 3, où le Conseil demandera si « elle » sait qu'il s'agit de « la lumière ».
+
+    Deux résumés côte à côte plutôt qu'un seul. La moyenne dit de quoi parle
+    l'ensemble du relevé ; le maximum dit si un mot déterminant est présent
+    quelque part. Sur des témoignages de douze mots, la moyenne seule dilue le mot
+    qui décide dans les onze autres.
     """
 
     def __init__(self, taille_vocabulaire, nombre_classes, dimension=64, cachee=128,
-                 oubli=0.0):
+                 oubli=0.0, avec_maximum=True):
         super().__init__()
         self.vecteurs = nn.Embedding(taille_vocabulaire, dimension, padding_idx=0)
+        self.avec_maximum = avec_maximum
         self.tete = nn.Sequential(
             nn.Dropout(oubli),
-            nn.Linear(dimension, cachee),
+            nn.Linear(dimension * (2 if avec_maximum else 1), cachee),
             nn.ReLU(),
             nn.Dropout(oubli),
             nn.Linear(cachee, nombre_classes),
@@ -32,11 +38,21 @@ class SacDeMots(nn.Module):
 
     def forward(self, jetons):
         vecteurs = self.vecteurs(jetons)
-        presents = (jetons != 0).unsqueeze(-1).float()
+        presents = (jetons != 0).unsqueeze(-1)
         # Moyenne sur les mots réellement présents : le remplissage ne doit pas
         # diluer les relevés courts (la moitié font 13 mots ou moins).
-        moyenne = (vecteurs * presents).sum(dim=1) / presents.sum(dim=1).clamp(min=1)
-        return self.tete(moyenne)
+        compte = presents.sum(dim=1).clamp(min=1)
+        resume = (vecteurs * presents).sum(dim=1) / compte
+        if self.avec_maximum:
+            # Le remplissage est mis hors jeu avant le maximum, sinon un relevé
+            # court verrait ses zéros de remplissage gagner le maximum.
+            masque = vecteurs.masked_fill(~presents, float("-inf"))
+            # Un relevé sans un seul jeton connu a toutes ses positions masquées :
+            # son maximum vaut -inf et suffit à mettre toute la perte à NaN.
+            # Il existe : des témoignages ne contiennent que des entités HTML.
+            maximum = masque.max(dim=1).values.nan_to_num(neginf=0.0)
+            resume = torch.cat([resume, maximum], dim=-1)
+        return self.tete(resume)
 
 
 # --- Acte 3 : à écrire à la main ------------------------------------------
