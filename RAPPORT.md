@@ -48,13 +48,89 @@ publication. C'est une tendance, pas une monotonie. Figure :
 
 ### Phase 1 — le chiffre était vrai, la flotte est perdue
 
-**À écrire**, sans code, en trois parties :
+> Brouillon à relire et à réécrire à ma main avant remise.
 
-1. ce que le chiffre du 4 juillet disait réellement, et les deux ou trois autres
-   explications qu'il autorise tout autant ;
-2. trois relevés recopiés tels quels, choisis pour montrer ce qu'un comptage ne
-   verra jamais ;
-3. la commande passée au Conseil, formulée comme une tâche : ce qui entre, ce qui sort.
+#### Ce que le chiffre disait réellement
+
+Le chiffre du dossier est juste : un 4 juillet, la transmission enregistre 51
+relevés, contre 9,2 un jour ordinaire. Cinq fois et demie plus. Ce que ce chiffre
+dit, et c'est tout ce qu'il dit : ce jour-là, il y a beaucoup plus de signalements
+enregistrés que d'habitude.
+
+Le dossier en a tiré autre chose. Il a écrit que la population est habituée à voir
+des choses dans le ciel ce soir-là, donc qu'elle ne prêtera pas attention à une
+flotte. C'est un saut. Le chiffre compte des signalements, pas de l'inattention.
+
+Trois autres lectures tiennent aussi bien, à partir du même nombre.
+
+D'abord, il y a simplement plus de monde dehors. Jour férié, soirée d'été, les gens
+sont dans la rue et regardent en l'air. Le pic mesure alors la taille du public, pas
+son indifférence — et un public nombreux est le contraire de ce qu'on cherche pour
+passer inaperçu.
+
+Ensuite, il y a réellement plus de choses dans le ciel : feux d'artifice, lanternes,
+avions de parade. Dans ce cas le pic ne mesure ni l'attention au ciel ni des objets
+inconnus, il mesure des confusions.
+
+Enfin, un pic ne suppose pas une fête. Le 16 novembre 1999 porte 195 relevés et
+c'est le deuxième jour le plus chargé du fichier. Ce n'est ni Halloween ni le
+Nouvel An. Le raisonnement du dossier ne s'applique pas à cette journée-là, alors
+qu'elle ressemble beaucoup au 4 juillet du point de vue du comptage.
+
+Il faut ajouter une remarque sur la solidité de ce chiffre. Les grands 4 juillet
+sont 2010 (206 relevés), 2012 (191), 2013 (180) et 2011 (155). Le pic est concentré
+sur la fin de la transmission. Ce n'est pas une régularité observée depuis 1990.
+
+Rien dans les nombres ne permet de choisir entre « les gens sont blasés et
+ignoreront » et « les gens regardent et signaleront ». Les deux produisent le même
+51. Pour trancher, il faut lire ce que les témoins écrivent. Le dossier ne l'a pas
+fait, et c'est là que la flotte a été perdue.
+
+#### Trois relevés, recopiés tels quels
+
+`1993-07-04 23:45 — tooele city — shape: sphere`
+
+> 4 intense glowing green &quot;Stop-light&quot; type orbs holding tight diamond
+> formation.  Not Fireworks...
+
+Le témoin écarte lui-même l'explication du feu d'artifice. Il n'est pas blasé, il
+trie, et il tient à le préciser. Pour le comptage, ce relevé est une unité parmi 51.
+
+`1995-07-04 22:00 — tacoma (waterfront area) — shape: circle`
+
+> MANY PEOPLE ON DOCK WAITING FOR FIREWORKS DISPLAY SEE A RED CIRCLE HOVERING AND
+> THEN MOVE SLOWLY WEST.
+
+Une foule immobile, rassemblée, qui attend un spectacle dans le ciel et qui a donc
+déjà les yeux levés. C'est l'inverse exact de l'inattention supposée par le dossier.
+
+`1997-07-04 20:30 — st. charles — shape: light`
+
+> We were at a local fireworks display.  Just before dusk&#44 I looked up in the
+> sky with my son and saw a large green object shooting acros
+
+Même configuration, et le témoin distingue nettement le spectacle auquel il assiste
+de la chose qu'il a vue passer.
+
+Ces trois textes racontent la même journée que le chiffre 51, et ils en donnent une
+lecture opposée : le 4 juillet est le moment où le plus grand nombre de personnes
+regardent volontairement le ciel, et où elles font la différence entre un feu
+d'artifice et autre chose. Le pic n'était pas une couverture, c'était un avertissement.
+
+#### La commande passée au Conseil
+
+Ce que le comptage ne tranchera jamais : parmi les 51 signalements d'un 4 juillet,
+combien décrivent un objet structuré, et combien décrivent un feu d'artifice ? Le
+comptage répond 51 dans les deux cas. Il faudrait lire les 51 textes.
+
+D'où la tâche demandée, en une phrase que le Conseil peut répéter :
+
+> **Entre** : le texte écrit par un témoin. **Sort** : la forme qu'il décrit, choisie
+> parmi les formes connues du Bureau.
+
+La colonne `shape` du fichier contient déjà cette information pour les relevés
+existants. Elle sert donc à vérifier les réponses du système avant de lui faire
+confiance sur un relevé neuf.
 
 ---
 

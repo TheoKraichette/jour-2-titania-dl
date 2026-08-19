@@ -192,35 +192,36 @@ def courbe_annuelle(par_observation, par_publication):
     figures.poser(fig, "phase00_volume_annuel.png")
 
 
+# Les trois relevés cités dans RAPPORT.md, repérés par date et ville. Le script ne
+# calcule rien ici — la phase est écrite sans code — il ressort les textes pour qu'on
+# vérifie qu'ils sont dans le fichier et recopiés tels quels.
+RELEVES_CITES = [
+    ("1993-07-04", "tooele city"),
+    ("1995-07-04", "tacoma (waterfront area)"),
+    ("1997-07-04", "st. charles"),
+]
+
+
 def phase01(dossier):
     """Le chiffre était vrai, la flotte est perdue.
 
-    Phase sans code : une page dans RAPPORT.md. Ce qui suit sert à la nourrir —
-    trois relevés recopiés tels quels, choisis pour montrer ce qu'un comptage ne
-    verra jamais.
+    Phase sans code : la page est dans RAPPORT.md. Ce qui suit ne fait que
+    republier les trois relevés qu'elle cite, pour qu'ils soient vérifiables.
     """
     titre(1, "le chiffre était vrai, la flotte est perdue")
-    a_faire(
-        """
-        1. Ce que le chiffre du 4 juillet disait réellement, et les deux ou trois
-           autres explications qu'il autorise tout autant.
-        2. Trois relevés recopiés tels quels (voir les candidats affichés ci-dessous).
-        3. La commande passée au Conseil : la tâche, ce qui entre, ce qui sort —
-           en une phrase que le Conseil peut répéter.
-        """
-    )
+    print("  Page écrite dans RAPPORT.md. Les trois relevés qu'elle cite :")
 
-    candidats = (
-        dossier.df.filter(
-            (pl.col("datetime").dt.month() == 7)
-            & (pl.col("datetime").dt.day() == 4)
-            & pl.col("comments").is_not_null()
-            & (pl.col("comments").str.len_chars() > 60)
-        )
-        .select("datetime", "city", "shape", "comments")
-        .head(6)
-    )
-    print("\n  Candidats du 4 juillet (à trier à la main, pas à recopier en vrac) :")
-    for ligne in candidats.iter_rows(named=True):
+    for jour, ville in RELEVES_CITES:
+        trouve = dossier.df.filter(
+            (pl.col("datetime").dt.date().cast(pl.String) == jour)
+            & (pl.col("city") == ville)
+        ).select("datetime", "city", "shape", "comments")
+        if trouve.is_empty():
+            print(f"\n  ✗ introuvable : {jour} {ville} — la citation est à corriger")
+            continue
+        ligne = trouve.row(0, named=True)
         print(f"\n    {ligne['datetime']}  {ligne['city']}  [{ligne['shape']}]")
         print(f"    « {ligne['comments']} »")
+
+    print("\n  Ce qui entre dans la machine : le texte écrit par un témoin.")
+    print("  Ce qui en sort : la forme qu'il décrit, parmi les formes connues du Bureau.")
