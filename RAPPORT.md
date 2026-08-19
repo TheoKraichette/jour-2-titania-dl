@@ -794,12 +794,34 @@ Les trois validations :
 
 ### Phase 11 — le Conseil mélange vos mots
 
+Le conseiller a rendu la bouillie : « of white it rows between lights them lights
+in with pulsating had red ». L'écart est mesuré de la même façon deux fois — pour
+chaque mot, la distance entre sa sortie dans la phrase correcte et sa sortie dans
+la bouillie, puis le maximum sur les mots.
+
 | | Écart entre phrase correcte et phrase mélangée |
 |---|---|
-| avant correction | |
-| après correction | |
+| avant correction | **5,96 × 10⁻⁸** — le zéro numérique |
+| après correction | **0,1969** |
 
-**À écrire :** où l'information manquante a été injectée, et pourquoi là et pas ailleurs.
+Le conseiller avait raison, chiffres en main : mélangez les mots, les mêmes
+couples se comparent, les mêmes proportions sortent, chaque mot ressort
+identique. Pour ce mécanisme, une phrase n'est pas une suite, c'est un sac.
+
+La correction ne touche pas au mécanisme : un vecteur par position, fabriqué à la
+main (sinus et cosinus à fréquences décroissantes, aucune valeur apprise),
+**ajouté aux vecteurs d'entrée avant le calcul**. Le mot déplacé n'entre plus
+avec le même vecteur, donc il ne pose plus la même question : l'écart passe de
+zéro à 0,197.
+
+Pourquoi l'injecter là et pas ailleurs : la question, l'étiquette et le contenu
+de chaque mot dérivent tous de son vecteur d'entrée — c'est le seul endroit que
+le mécanisme regarde. Injectée après le calcul, l'information arriverait trop
+tard : les proportions du mélange seraient déjà tirées du sac.
+
+Les deux matrices côte à côte, la même tête sur la même phrase :
+`figures/phase11_sans_positions.png` et `phase11_avec_positions.png` — la
+seconde n'est plus symétriquement fade, chaque ligne a pris un relief propre.
 
 ### Phase 12 — le Conseil demande la facture
 

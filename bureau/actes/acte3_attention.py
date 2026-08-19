@@ -99,20 +99,94 @@ def phase10(dossier):
                            case=poids[i_pronom, i_nom].item())
 
 
+def la_tete_de_la_phase10(dossier):
+    """Le relevé, les vecteurs et la tête de la phase 10 — reconstruits à
+    l'identique si la phase 11+ tourne seule (tout est déterministe par graine)."""
+    if getattr(dossier, "attention", None):
+        return dossier.attention
+    indice, mots, i_nom, i_pronom = relever_un_temoignage(dossier)
+    entree = vecteurs_d_entree(dossier, mots)
+    tete = modeles.UneTete(DIMENSION)
+    with torch.no_grad():
+        _, poids = tete(entree)
+    dossier.attention = {"indice": indice, "mots": mots, "entree": entree,
+                         "tete": tete, "i_nom": i_nom, "i_pronom": i_pronom,
+                         "poids": poids.squeeze(0)}
+    return dossier.attention
+
+
+def encodage_de_position(nombre, dimension):
+    """Un vecteur par position, fabriqué à la main : sinus et cosinus à des
+    fréquences décroissantes. Aucune valeur apprise — la position p et la
+    position q donnent des vecteurs différents, c'est tout ce qu'on demande."""
+    positions = torch.arange(nombre, dtype=torch.float32).unsqueeze(1)
+    frequences = torch.exp(
+        torch.arange(0, dimension, 2, dtype=torch.float32)
+        * (-torch.log(torch.tensor(10000.0)) / dimension))
+    encodage = torch.zeros(nombre, dimension)
+    encodage[:, 0::2] = torch.sin(positions * frequences)
+    encodage[:, 1::2] = torch.cos(positions * frequences)
+    return encodage
+
+
 def phase11(dossier):
-    """Le Conseil mélange vos mots."""
+    """Le Conseil mélange vos mots.
+
+    D'abord lui donner raison, chiffres en main : le mécanisme de la phase 10 ne
+    voit pas l'ordre. Puis faire bouger la sortie sans toucher au mécanisme —
+    l'information de position s'injecte dans les vecteurs d'entrée, avant le
+    calcul.
+    """
     titre(11, "le Conseil mélange vos mots")
-    a_faire(
-        """
-        D'abord prouver que le conseiller a raison : permuter les mots du relevé, refaire
-        tourner le code de la phase 10, montrer chiffres en main que la sortie de chaque
-        mot n'a pas bougé.
-        Puis faire qu'elle bouge, SANS toucher au mécanisme : l'information de position
-        s'ajoute aux vecteurs d'entrée, avant le calcul.
-        Rendre le même écart mesuré de la même façon, avant et après. Le premier nul ou
-        indistinguable de zéro, le second non. Les deux matrices de poids côte à côte.
-        """
-    )
+    attention = la_tete_de_la_phase10(dossier)
+    mots, entree, tete = attention["mots"], attention["entree"], attention["tete"]
+
+    # La bouillie du conseiller : les mêmes mots, tirés au sort.
+    generateur = torch.Generator().manual_seed(dossier.graine)
+    melange = torch.randperm(len(mots), generator=generateur)
+    print(f"  la phrase correcte : {' '.join(mots)}")
+    print(f"  la bouillie rendue : {' '.join(mots[i] for i in melange.tolist())}")
+
+    def ecart_apres_permutation(vecteurs, vecteurs_melanges):
+        """Le même écart, mesuré de la même façon deux fois : pour chaque mot, la
+        distance entre sa sortie dans la phrase correcte et sa sortie dans la
+        bouillie, puis le maximum sur les mots."""
+        with torch.no_grad():
+            sortie, poids = tete(vecteurs)
+            sortie_melangee, poids_melanges = tete(vecteurs_melanges)
+        return ((sortie[:, melange] - sortie_melangee).abs().max().item(),
+                poids.squeeze(0), poids_melanges.squeeze(0))
+
+    # --- Avant : le conseiller a raison ------------------------------------------
+    ecart_avant, poids_avant, _ = ecart_apres_permutation(entree, entree[:, melange])
+    print(f"\n  avant correction : écart maximal {ecart_avant:.2e} — la sortie de "
+          f"chaque mot n'a pas bougé.\n  Pour ce mécanisme, une phrase n'est pas "
+          f"une suite, c'est un sac.")
+
+    # --- Après : la position injectée dans les vecteurs d'entrée ------------------
+    positions = encodage_de_position(len(mots), DIMENSION)
+    avec_positions = entree + positions
+    melange_avec_positions = entree[:, melange] + positions
+    ecart_apres, poids_apres, _ = ecart_apres_permutation(
+        avec_positions, melange_avec_positions)
+    print(f"  après correction : écart maximal {ecart_apres:.4f} — le même mot, "
+          f"déplacé, ne pose plus\n  la même question.")
+
+    figures.matrice_d_attention(
+        poids_avant.numpy(), mots, mots, "phase11_sans_positions.png",
+        "Phase 11 — sans positions : la matrice d'un sac de mots")
+    figures.matrice_d_attention(
+        poids_apres.numpy(), mots, mots, "phase11_avec_positions.png",
+        "Phase 11 — avec positions : la même tête, l'ordre en plus")
+
+    print("\n  Où l'information a été injectée, et pourquoi là : dans les vecteurs "
+          "d'entrée, avant le\n  calcul — parce que la question, l'étiquette et le "
+          "contenu de chaque mot dérivent tous\n  de son vecteur d'entrée, c'est "
+          "le seul endroit que le mécanisme regarde. Injectée\n  après, les "
+          "proportions du mélange seraient déjà tirées du sac.")
+
+    dossier.attention["positions"] = positions
+    return dossier.retenir(11, ecart_avant=ecart_avant, ecart_apres=ecart_apres)
 
 
 def phase12(dossier):
