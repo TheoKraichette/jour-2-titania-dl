@@ -225,22 +225,123 @@ ne savais rien.
 
 ### Phase 3 — battre le service statistique
 
-Décisions sur le jeu (implémentées dans `bureau/jeu.py`, **à défendre ici**) :
+#### Les quatre décisions sur le jeu
 
-| Décision | Règle appliquée | Pourquoi |
-|---|---|---|
-| les relevés sans forme | | |
-| les fourre-tout (`unknown`, `other`) | | |
-| les doublons de sens (`round`/`circle`, `changed`/`changing`) | | |
-| les classes sous 300 relevés | | |
+Chaque décision change le nombre de classes, donc le score. Les comptes ci-dessous
+sont ceux que le script affiche, pas des estimations.
 
-Nombre de classes retenues : 18. Relevés gardés : 72 904. Découpe : 51 034 /
-10 935 / 10 935 (apprentissage / validation / test), tirée une fois et réutilisée
-par toutes les phases.
+**Les 2 922 relevés sans forme : écartés du jeu supervisé.** Ils n'ont pas
+d'étiquette à apprendre, et en inventer une reviendrait à fabriquer la réponse que
+je prétends prédire. Je ne les supprime pas pour autant : ils restent dans le
+fichier chargé et l'acte 4 travaillera dessus, puisque la recherche par question ne
+demande pas d'étiquette.
 
-**À rendre :** les trois scores côte à côte (linéaire du service statistique,
-réseau PyTorch, toujours la forme la plus fréquente), les deux courbes de perte de
-chaque essai, et le trajet du texte brut jusqu'au premier nombre.
+**Les deux fourre-tout `unknown` et `other` : écartés, 12 566 relevés.** C'est la
+décision la plus coûteuse, elle retire un relevé sur six. Elle se défend parce que
+ces deux valeurs ne sont pas des formes : ce sont l'absence de forme. Demander à un
+réseau de reconnaître « la description d'une chose qu'on n'a pas su nommer » n'a pas
+de sens, et les garder aurait gonflé le score global sans qu'on sache de quoi —
+`unknown` aurait servi de fourre-tout aux prédictions incertaines.
+
+**Les doublons de sens : fusionnés vers la graphie la plus fréquente.** `round` →
+`circle` (2 + 8 453 relevés) et `changed` → `changing` (1 + 2 140). Les deux
+graphies rares sont anecdotiques, mais les laisser à part créerait deux classes
+impossibles à départager d'une classe voisine — un réseau qui hésite entre `round`
+et `circle` serait compté en erreur alors qu'il a raison. La fusion fait passer les
+valeurs distinctes de 30 à 28.
+
+**Les classes sous 300 relevés : écartées, 7 classes pour 279 relevés.** `cross`,
+`delta`, `crescent`, `pyramid`, `flare`, `hexagon`, `dome`. Avec la découpe en
+trois, une classe de 30 relevés n'en a que 4 ou 5 en test : son score serait
+gouverné par le hasard du tirage, et elle abîmerait le F1 moyen par classe sans rien
+mesurer de réel. Le seuil de 300 vient de l'énoncé lui-même, qui signale que 18 des
+29 valeurs dépassent ce compte.
+
+**Ce qu'il reste : 18 classes, 72 904 relevés**, découpés en 51 034 / 10 935 /
+10 935 (apprentissage / validation / test). Cette découpe est tirée une seule fois
+et réutilisée par toutes les phases suivantes, sans quoi aucun score ne serait
+comparable à un autre.
+
+#### Du texte brut au premier nombre
+
+Sur un relevé réel de la partie apprentissage :
+
+```
+1. texte brut  « Stationary intermitient flashes »
+2. nettoyé     « Stationary intermitient flashes »      (entités HTML retirées)
+3. jetons      ['stationary', 'intermitient', 'flashes']
+4. indices     [139, 1, 452, 0, 0, 0, 0, 0, 0, …]
+```
+
+Le premier nombre qui entre dans le réseau est donc **139**, le rang du mot
+`stationary` dans un vocabulaire de 10 093 mots construit sur la seule partie
+apprentissage. Deux valeurs sont réservées : `0` pour le remplissage et `1` pour un
+mot inconnu — c'est le sort de `intermitient`, faute de frappe du témoin vue une
+seule fois, donc absente du vocabulaire. Le réseau reçoit un vecteur de 29 entiers
+(le 99ᵉ centile des longueurs), puis remplace chaque entier par un vecteur qu'il
+apprend.
+
+Le vocabulaire est construit sur l'apprentissage seul, jamais sur tout le jeu :
+sinon un mot vu uniquement en test serait déjà connu du réseau, et la découpe
+fuirait.
+
+#### Le journal des réglages
+
+Le premier montage du réseau perdait contre le linéaire. Voici ce que j'ai touché,
+un réglage à la fois, chacun avec sa mesure — y compris celui qui n'a rien rapporté.
+Le point de comparaison est le linéaire du service statistique : **taux 0,537, F1
+moyen par classe 0,494**.
+
+| Réglage | Taux | F1 moyen | Temps |
+|---|---|---|---|
+| montage de départ | 0,495 | 0,428 | 83 s |
+| 1 — garder l'état de meilleure validation, pas le dernier | 0,525 | 0,437 | 83 s |
+| 2 — oubli de 0,3 sur la tête | 0,540 | 0,462 | 133 s |
+| 3 — maximum concaténé à la moyenne | 0,544 | 0,480 | 124 s |
+| 4 — 30 passages au lieu de 12 | 0,544 | 0,480 | 330 s |
+| 5 — pondération des classes en 1/√effectif | 0,532 | 0,496 | 105 s |
+
+**Réglage 1.** La perte de validation est au plus bas dès le passage 2 sur 12 :
+tout ce que le réseau gagne ensuite en apprentissage, il le perd en validation.
+Livrer le dernier état, c'est livrer le modèle au moment où il a le plus surappris.
+L'entraînement va quand même jusqu'au bout, pour que la courbe montre la divergence.
+
+**Réglage 2.** L'oubli déplace le meilleur point du passage 2 au passage 5 : le
+réseau peut enfin apprendre un moment avant de mémoriser. La perte d'apprentissage
+cesse de plonger — 1,24 au lieu de 0,73 — et c'est le but, pas un échec.
+
+**Réglage 3.** La moyenne des vecteurs de mots dit de quoi parle le relevé entier ;
+le maximum dit si un mot déterminant est présent quelque part. Sur douze mots, la
+moyenne seule dilue le mot qui décide dans les onze autres. C'est le F1 par classe
+qui en profite le plus, ce qui est cohérent : une forme rare se reconnaît à un mot
+précis.
+
+En chemin, une panne : perte à NaN dès le premier passage, taux retombé exactement
+sur celui de la baseline. Le maximum est pris après avoir mis le remplissage à
+moins l'infini, mais certains témoignages ne contiennent aucun jeton connu — il en
+existe qui ne sont faits que d'entités HTML. Toutes leurs positions sont masquées,
+leur maximum vaut moins l'infini, et un seul suffit à mettre toute la perte à NaN.
+
+**Réglage 4, sans effet, annulé.** Le meilleur point de validation restait le
+passage 7 : le réseau avait convergé, je le croyais interrompu trop tôt, il ne
+l'était pas. Les 23 passages suivants ne servaient qu'à surapprendre — validation de
+1,60 à 2,35 pendant que l'apprentissage descendait de 1,42 à 0,99 — pour un temps
+machine multiplié par 2,7. Je le note parce qu'un réglage qui ne rapporte rien est
+une information, et parce que c'est exactement le genre de dépense que la phase 5
+devra chasser.
+
+**Réglage 5.** `light` porte 24 % des relevés, les dernières formes retenues moins
+de 1 %. Sans pondération, le réseau a intérêt à ignorer les rares : le taux global
+ne le sanctionne pas, le F1 moyen par classe si. La racine adoucit la correction —
+la pondération pleine en 1/effectif retourne complètement le problème et sacrifie
+les classes fréquentes.
+
+Ce réglage a mis en évidence un point que je n'attendais pas ici : **les deux
+résumés du score ne se déplacent pas ensemble**. Le réglage 5 gagne 0,016 de F1 et
+perd 0,012 de taux. Selon celui qu'on regarde, le réseau bat le linéaire ou lui
+passe derrière. C'est le sujet annoncé pour la phase 8, rencontré cinq phases plus
+tôt, et ça règle une question de méthode : je rends les deux, toujours, et je ne
+choisis pas celui qui m'arrange.
 
 ### Phase 4 — le carnet de pannes
 
