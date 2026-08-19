@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 3.
+> Phases traitées : 0 à 4.
 
 ---
 
@@ -38,6 +38,24 @@ Ce que le dossier ne donnait pas :
 - maximum en une seule journée : **206 relevés, le 4 juillet 2010** ;
 - rang du 4 juillet dans le classement des journées : **1er sur 7 663**. Quatre
   des cinq journées les plus chargées de toute la transmission sont des 4 juillet.
+
+Les dix journées les plus chargées du fichier :
+
+| Rang | Journée | Relevés | |
+|---|---|---|---|
+| 1 | 2010-07-04 | 206 | 4 juillet |
+| 2 | 1999-11-16 | 195 | ni fête ni férié |
+| 3 | 2012-07-04 | 191 | 4 juillet |
+| 4 | 2013-07-04 | 180 | 4 juillet |
+| 5 | 2011-07-04 | 155 | 4 juillet |
+| 6 | 2009-09-19 | 129 | ni fête ni férié |
+| 7 | 2014-01-01 | 99 | Nouvel An |
+| 8 | 2013-12-31 | 96 | Saint-Sylvestre |
+| 9 | 2004-10-31 | 94 | Halloween |
+| 10 | 2009-07-04 | 88 | 4 juillet |
+
+Deux journées de ce classement ne correspondent à aucune fête — dont la deuxième
+du fichier. C'est la matière de la phase 1.
 
 La cinquième affirmation, « le volume croît continûment d'une année sur l'autre
 jusqu'à la fin de la transmission », ne se vérifie pas au pied de la lettre : il y
@@ -183,13 +201,25 @@ Tâche : `comments` entre, une forme sort.
 
 ### Phase 2 — le test d'acceptation du Bureau
 
-8 relevés appris par coeur. Figure : `figures/phase02_test_acceptation.png`.
+8 relevés appris par coeur, par le montage du projet — celui que la phase 3
+entraîne, la règle du Bureau l'exige. Figure : `figures/phase02_test_acceptation.png`.
 
-- les 8 prédictions tombent justes dès l'itération 2, alors que la perte vaut
-  encore 2,36 pour un hasard à ln(18) = 2,89. « Ne plus se tromper » n'est donc pas
-  le bon critère d'arrêt sur 8 relevés ;
-- mémorisation franche (perte < 1e-3) à l'itération **17**, perte finale 5,9e-4 ;
-- les 8 prédictions finales tombent sur les 8 vraies formes.
+- les 8 prédictions tombent justes dès l'itération 1, alors que la perte vaut
+  encore 2,963 — c'est-à-dire **au-dessus** du hasard, ln(18) = 2,890. « Ne plus se
+  tromper » n'est donc pas un critère d'arrêt sur 8 relevés ;
+- mémorisation franche (perte < 1e-3) à l'itération **8**, perte finale 4,6e-4 ;
+- les 8 prédictions finales, à côté des 8 vraies formes :
+
+| Prédite | Vraie | Début du relevé |
+|---|---|---|
+| flash | flash | « Stationary intermitient flashes » |
+| fireball | fireball | « Ball of flames moving quickly across the sky » |
+| light | light | « White Light, circular, N to S flight path » |
+| light | light | « On my way home from work heading north on the Florid… » |
+| circle | circle | « UFO seen while driving the back roads of Wyoming. » |
+| circle | circle | « Circular Orange object » |
+| sphere | sphere | « 3 orange spheres. » |
+| oval | oval | « observed tarnished, oval shaped object with black… » |
 
 Ce que ce test prouve : le montage relie l'entrée à la sortie et la correction
 circule. Ce qu'il ne prouve pas : qu'il apprendra quoi que ce soit de généralisable.
@@ -215,8 +245,14 @@ un critère qui se satisfait par accident.
 **Ce que j'ai changé.** Un seul geste : le critère d'arrêt. Je continue jusqu'à ce
 que la perte passe sous 1e-3, et je relève au passage l'itération où les 8
 prédictions deviennent justes. Le script rend maintenant les deux nombres, parce que
-l'écart entre les deux est le résultat intéressant : 2 pour les prédictions, 17 pour
-la mémorisation réelle.
+l'écart entre les deux est le résultat intéressant — sur le montage final : 1 pour
+les prédictions, 8 pour la mémorisation réelle.
+
+**Une note sur le montage.** Ce test a d'abord été passé par mon premier montage,
+un sac de mots. Quand la phase 3 l'a remplacé par l'empilement à fenêtre glissante,
+j'ai refait passer le test au nouveau montage — c'est lui qui s'entraîne, c'est
+donc lui qui doit prouver que la correction circule. Les chiffres ci-dessus sont
+les siens, et le piège du critère est le même dans les deux cas.
 
 **Ce que ça m'a appris pour la suite.** Un compte de bonnes réponses sur un petit
 échantillon ne prouve pas qu'un montage apprend, et un chiffre ne vaut rien sans la
@@ -298,7 +334,9 @@ fuirait.
 Le réseau passe devant sur les deux mesures, et pas seulement en moyenne : **les
 trois initialisations battent le linéaire individuellement**. C'est le critère que
 je retiens, parce qu'une moyenne se laisse tirer par un tirage chanceux — ça m'est
-arrivé, voir plus bas. Figure : `figures/phase03_reseau.png`.
+arrivé, voir plus bas. Chaque essai a ses deux courbes, perte d'apprentissage et
+perte de validation sur la même figure : `figures/phase03_reseau_init0.png`,
+`init1`, `init2`.
 
 Le réseau coûte sept fois plus cher en temps machine que le linéaire pour ce gain.
 C'est ce que la phase 5 devra réduire.
@@ -366,13 +404,14 @@ jugé sur son pire essai, pas sur sa moyenne.
 ### Phase 4 — le carnet de pannes
 
 Le montage de la phase 3, cassé trois fois, une panne à la fois, remis d'aplomb
-entre chaque. Montage sain de référence : **0,546** sur le test.
-Figure : `figures/phase04_carnet_de_pannes.png`.
+entre chaque. Montage sain de référence : **0,546** sur le test. Une figure par
+panne : `figures/phase04_panne1_recite.png`, `phase04_panne2_etiquettes.png`,
+`phase04_panne3_figee.png`.
 
 | Panne | Le geste exact | Signature | Le test, en moins d'une minute |
 |---|---|---|---|
-| **1.** excellent à l'entraînement, bête à l'évaluation | retirer l'oubli et prolonger l'entraînement | les deux courbes divergent : l'apprentissage descend pendant que la validation remonte (1,684 → 1,818) | évaluer sur les relevés **d'apprentissage** : 0,716 contre 0,516 en test |
-| **2.** la perte descend, les prédictions sont pires que le hasard | décaler les étiquettes d'un cran avant l'apprentissage | courbe d'apprentissage parfaitement saine (2,031 → 1,382), score de test au ras du sol | regarder la matrice de confusion : les erreurs forment une diagonale **décalée** |
+| **1.** excellent à l'entraînement, bête à l'évaluation | retirer l'oubli : plus rien ne freine la mémorisation | les deux courbes divergent : l'apprentissage descend pendant que la validation remonte (1,684 → 1,818) | évaluer sur les relevés **d'apprentissage** : 0,716 contre 0,516 en test |
+| **2.** la perte descend, les prédictions sont pires que le hasard | décaler les étiquettes d'un cran avant l'apprentissage | courbe d'apprentissage parfaitement saine (2,031 → 1,382), **indistinguable de la saine** — la figure les superpose | regarder la matrice de confusion : les erreurs forment une diagonale **décalée** |
 | **3.** la perte se fige | le pas d'apprentissage n'arrive jamais à l'optimiseur | la perte ne bouge pas de la 3ᵉ décimale dès le premier passage (3,1694 → 3,1692) | comparer un poids avant et après un passage : identique au bit près |
 
 **Panne 1 — 0,716 en apprentissage contre 0,516 en test.** Le réseau récite les
