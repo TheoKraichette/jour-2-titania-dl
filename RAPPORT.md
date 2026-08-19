@@ -995,15 +995,13 @@ incapable d'inventer.
 
 ### Phase 16 — faire entrer le tout dans le vaisseau
 
-Marge de score acceptée, **annoncée avant toute optimisation** (cette phrase est
-datée par l'historique de commits et ne se réécrit pas) :
+**La marge, annoncée avant toute optimisation.** Le système livré est le
+classifieur de l'acte 4 — le cerveau emprunté et sa tête, régime gelé de la
+phase 14. J'accepte de perdre au plus **0,01 de taux et 0,01 de F1** entre le
+système d'avant et le système réduit. Cette phrase est écrite et commitée avant
+que la moindre réduction ait été lancée ou mesurée, et elle ne se réécrira pas.
 
-| | Poids sur disque | Temps d'une réponse | Réponses par unité de temps | Score |
-|---|---|---|---|---|
-| avant | | | | |
-| après | | | | |
-
-**À écrire :** pourquoi vous vous êtes arrêté là, et ce que vous auriez tenté ensuite.
+*(les mesures avant/après suivront dans un commit ultérieur)*
 
 ### Phase 17 — le faux témoignage
 
