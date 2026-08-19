@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 7.
+> Phases traitées : 0 à 9.
 
 ---
 
@@ -624,22 +624,86 @@ prédiction d'un relevé passe par des statistiques qui ne le concernent pas.
 
 ### Phase 8 — le Conseil a lu trois relevés
 
-Liste des mots interdits : **à écrire ici**, en entier.
+#### Les comptes du Conseil, refaits — et un écart de protocole
 
-Compte de relevés contenant encore un mot interdit après traitement : **doit être 0**.
+Je trouve : le mot de la forme présent tel quel dans **30,6 %** des relevés
+(le Conseil dit 34,7 %), **45,5 %** pour light (72,6 %), **7,7 %** pour circle
+(9,9 %). Mon comptage est en mot exact après découpage ; les chiffres du Conseil
+s'expliquent si le sien est en sous-chaîne — « light » se trouve alors dans
+*bright*, *lightning*, *moonlight*. Le constat qualitatif est le même : le score
+global ne vient pas du même endroit selon les classes, et pour light la machine
+avait le mot sous les yeux une fois sur deux.
 
-| | Taux global | Moyenne par classe |
+#### La liste des mots interdits — 134 mots
+
+Les 18 formes retenues, les valeurs écartées (`unknown`, `other`), les produits
+des fusions (`round`, `changed`), leurs pluriels et variantes d'écriture
+complétés à la main, plus le possessif « 's » de chacun :
+
+> ball, balls, change, changed, changes, changing, changings, chevron, chevrons,
+> cigar, cigars, circle, circled, circles, circling, circular, cone, cones,
+> conical, cylinder, cylinders, cylindrical, diamond, diamonds, disc, discs,
+> disk, disks, egg, eggs, fireball, fireballs, flash, flashed, flashes,
+> flashing, flashs, formation, formations, light, lighted, lighting, lights,
+> lit, lite, other, others, oval, ovals, ovoid, rectangle, rectangles,
+> rectangular, round, rounded, rounds, sphere, spheres, spherical, spheroid,
+> teardrop, teardrops, triangle, triangles, triangular, unknown, unknowns
+> — et la variante « 's » de chacun.
+
+« ball/balls » y est parce que « fire ball » s'écrit souvent en deux mots ;
+« fire », « tear », « drop » ou « shaped » n'y sont pas, trop généraux pour être
+des mots de forme. Limite connue de la règle : elle interdit les variantes
+d'écriture, pas les **synonymes** — « saucer » reste permis, et la phase 9
+montrera que la machine s'en sert.
+
+#### La preuve du zéro
+
+```
+relevés contenant un mot interdit avant traitement : 50 466 (69,2 %)
+relevés contenant encore un mot interdit après traitement : 0
+```
+
+L'interdiction s'applique au découpage en jetons, à l'apprentissage comme à
+l'évaluation ; le vocabulaire est reconstruit sur les textes censurés (10 024
+mots). Le compte de zéro est calculé et affiché par le script, qui s'arrête si
+l'interdiction n'est pas effective.
+
+#### La chute, sans maquillage
+
+Réentraîné à l'identique (même montage, mêmes réglages, mêmes trois
+initialisations, même découpe) :
+
+| | Taux global | F1 moyen par classe |
 |---|---|---|
-| avant interdiction | | |
-| après interdiction | | |
+| avant interdiction | 0,5397 | 0,5041 |
+| après interdiction | 0,3365 | 0,1571 |
+| **chute** | **0,2032 (−37,7 %)** | **0,3469 (−68,8 %)** |
 
-**À rendre :** lequel des deux résumés chute le plus et pourquoi, et le nom des
-deux ou trois classes qui se sont effondrées.
+**C'est le F1 moyen par classe qui chute le plus, et de loin.** Les deux résumés
+racontent deux histoires : le taux global, dominé par light (24 % des relevés),
+résiste à moitié parce que light garde des indices contextuels — le ciel, les
+couleurs, « hovering », « bright ». Le F1 moyen, où chaque classe pèse autant,
+s'effondre parce que **les classes rares vivaient presque exclusivement du mot
+recopié** :
+
+| Forme | Rappel avant | Rappel après |
+|---|---|---|
+| diamond | 0,466 | **0,005** |
+| chevron | 0,520 | 0,101 |
+| sphere | 0,469 | 0,053 |
+| rectangle | 0,419 | 0,025 |
+| egg | 0,344 | **0,000** |
+
+Les classes effondrées : **diamond, chevron, sphere** — et egg ne retrouve plus
+un seul relevé. Quand un témoin voit un diamant, il écrit « diamond », et il n'y
+a presque rien d'autre dans son témoignage qui distingue un diamant d'un
+triangle. Le Conseil avait raison : pour ces classes, la machine ne comprenait
+pas une description, elle recopiait un mot. Ce qui reste — 0,34 de taux pour un
+hasard à 0,056 — est ce que le modèle comprend réellement d'une description.
 
 ### Phase 9 — rendre des comptes sur trois décisions
 
-Trois relevés (un réussi, un raté, un hésitant), chacun avec la part de chaque mot
-dans la décision, lisible par quelqu'un qui ne code pas.
+(section suivante)
 
 ---
 
