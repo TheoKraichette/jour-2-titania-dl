@@ -817,7 +817,7 @@ PHASE6 = {"taux_pire": 0.5387, "f1_pire": 0.5018,
           "residuel": True, "norme": None}
 
 
-def phase07(dossier, graines=(0, 1, 2), iterations=8):
+def phase07(dossier, graines=(0, 1, 2), iterations=8, passages_a_4=3):
     """Quatre relevés à la fois.
 
     Le Conseil a revendu la moitié de la salle des calculs : 4 relevés par lot.
@@ -845,7 +845,9 @@ def phase07(dossier, graines=(0, 1, 2), iterations=8):
 
     def un_essai(norme, taille_lot, graine=0):
         predits, _, historique, secondes = essai_du_reseau(
-            dossier, entrees, poids, graine, iterations, taille_lot, 2e-3,
+            dossier, entrees, poids, graine,
+            passages_a_4 if taille_lot == 4 else iterations,
+            taille_lot, 2e-3,
             fabrique=fabrique_empilement(dossier, residuel=config["residuel"],
                                          norme=norme))
         return {
@@ -856,11 +858,15 @@ def phase07(dossier, graines=(0, 1, 2), iterations=8):
         }
 
     # --- Le point de départ : l'entraînement de la phase 6, à 4 par lot ---------
-    # Une seule initialisation par courbe : un entraînement à 4 par lot fait
-    # 12 759 mises à jour par passage, la comparaison de courbes se fait à graine
-    # égale et le score final se confirme à 256 sur les trois graines.
-    print("  l'entraînement de la phase 6, relancé à 4 relevés par lot, sans rien "
-          "changer d'autre :")
+    # Une seule initialisation par courbe, et trois passages au lieu de huit : un
+    # passage à 4 par lot fait 12 759 mises à jour, soit 64 passages à 256 — en
+    # trois passages, le montage a déjà reçu 24 fois les mises à jour d'un
+    # entraînement complet de la phase 6, et l'état rendu reste choisi par la
+    # validation. Le score final se confirme à 256 sur les trois graines.
+    print(f"  l'entraînement de la phase 6, relancé à 4 relevés par lot "
+          f"({passages_a_4} passages = "
+          f"{passages_a_4 * 12759} mises à jour, contre "
+          f"{iterations * 200} à 256) :")
     retenu4 = un_essai(norme=config["norme"], taille_lot=4)
     print(f"    montage retenu (résidu seul) : taux {retenu4['taux']:.4f}   "
           f"F1 {retenu4['f1']:.4f}   ({retenu4['secondes']:.0f} s)"
@@ -880,18 +886,28 @@ def phase07(dossier, graines=(0, 1, 2), iterations=8):
     print(f"    norme par lot    : taux {avant['taux']:.4f}   F1 {avant['f1']:.4f}"
           f"   ({avant['secondes']:.0f} s)")
 
-    # Démonstration directe de la dépendance, avant toute correction :
-    entrainement.fixer_graine(dossier.graine)
-    temoin = fabrique_empilement(dossier, residuel=config["residuel"],
-                                 norme="lot")()
-    temoin.train()
+    # Démonstration directe de la dépendance, avant toute correction. L'oubli est
+    # mis à zéro dans les deux modèles témoins : actif, il tirerait des masques
+    # différents entre les deux passages et l'écart mesurerait le dropout au lieu
+    # de la normalisation.
+    def temoin_sans_oubli(norme):
+        entrainement.fixer_graine(dossier.graine)
+        modele = modeles.Empilement(
+            len(dossier.vocabulaire), len(dossier.classes),
+            dilatations=DILATATIONS, residuel=config["residuel"],
+            norme=norme, oubli=0.0)
+        modele.train()
+        return modele
+
+    temoin = temoin_sans_oubli("lot")
     seul = entrees["test"][:1]
     accompagne = entrees["test"][:4]
     with torch.no_grad():
         ecart = (temoin(seul) - temoin(accompagne)[:1]).abs().max().item()
     print(f"    le même relevé, seul puis accompagné de trois autres, dans ce "
-          f"modèle en mode\n    entraînement : écart maximal {ecart:.4f} sur les "
-          f"logits — sa sortie dépend de ses\n    voisins de lot.")
+          f"modèle en mode\n    entraînement (oubli coupé pour isoler la "
+          f"normalisation) : écart maximal\n    {ecart:.4f} sur les logits — sa "
+          f"sortie dépend de ses voisins de lot.")
 
     # --- La correction : modifier le modèle, pas le lot --------------------------
     # Normalisation par groupe : les mêmes statistiques, calculées dans le relevé
@@ -932,16 +948,14 @@ def phase07(dossier, graines=(0, 1, 2), iterations=8):
           f"   phase 6 : {config['taux_pire']:.4f} / {config['f1_pire']:.4f}")
 
     # --- Et sur un seul relevé ? --------------------------------------------------
+    corrige = temoin_sans_oubli("groupe")
     with torch.no_grad():
-        corrige = fabrique_empilement(dossier, residuel=config["residuel"],
-                                      norme="groupe")()
-        corrige.train()
         ecart_corrige = (corrige(seul) - corrige(accompagne)[:1]).abs().max().item()
     print(f"\n  la même expérience sur le montage corrigé : écart "
-          f"{ecart_corrige:.6f} — un relevé seul\n  donne exactement la même "
-          f"sortie qu'accompagné. L'ancien montage, lui, se normalise\n  contre "
-          f"lui-même en mode entraînement, et en mode évaluation il s'appuie sur "
-          f"des\n  moyennes mémorisées — apprises sur des lots de 4, donc bruitées.")
+          f"{ecart_corrige:.8f} — un relevé seul\n  donne la même sortie "
+          f"qu'accompagné. L'ancien montage, lui, se normalise contre\n  lui-même "
+          f"en mode entraînement, et en mode évaluation il s'appuie sur des\n  "
+          f"moyennes mémorisées — apprises sur des lots de 4, donc bruitées.")
 
     return dossier.retenir(
         7,

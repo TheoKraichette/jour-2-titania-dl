@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 6.
+> Phases traitées : 0 à 7.
 
 ---
 
@@ -555,9 +555,72 @@ couche en phase 5).
 
 ### Phase 7 — quatre relevés à la fois
 
-**À rendre :** la courbe à 4 relevés par lot avant et après correction sur la même
-figure ; le montage corrigé relancé à la taille de lot de la phase 6 ; ce qui, dans
-l'ancien montage, dépendait des autres relevés du lot.
+Un préalable de temps machine, noté avant tout : un passage à 4 relevés par lot
+fait 12 759 mises à jour, contre 200 à 256. Les entraînements à 4 sont donc menés
+sur 3 passages (38 277 mises à jour, soit 24 fois les mises à jour d'un
+entraînement complet de la phase 6), l'état rendu restant choisi par la
+validation. Chaque entraînement à 4 coûte ≈ 13 minutes contre 3 à 256 — le lot de
+4 ne réduit pas le calcul, il le découpe en 64 fois plus de morceaux.
+
+#### Le point de départ : rien n'a cassé, et ce n'est pas un hasard
+
+L'entraînement de la phase 6, relancé à 4 relevés par lot sans rien changer
+d'autre : **0,5379 / 0,5002**, contre 0,5387 / 0,5018 à 256. Écart de 0,003, dans
+le bruit. Rien ne s'est dégradé — parce que rien, dans le montage retenu en
+phase 6, ne dépend des autres relevés du lot. Ce n'est pas une chance : la
+normalisation par lot, qui en dépend, a été mesurée et écartée en phase 6.
+
+La phase se joue donc sur cette recette écartée, celle qui aurait été en faute.
+
+#### La dépendance, démontrée puis mesurée
+
+**La phrase que le Conseil demande** : dans le montage à normalisation par lot,
+la moyenne et la variance qui centrent chaque canal sont calculées **sur le
+lot** — la sortie d'un relevé dépendait des trois autres relevés tirés au hasard
+avec lui, ce qui n'aurait jamais dû arriver, car ce qu'un témoin a vu ne dépend
+pas de qui passe au guichet en même temps que lui.
+
+Démonstration directe, oubli coupé pour isoler la normalisation : le même relevé,
+seul puis accompagné de trois autres, dans le même modèle en mode entraînement —
+**écart de 0,983 sur les logits**. Le montage corrigé, même expérience :
+**0,0000033**, le zéro numérique.
+
+Et le score ? C'est la partie la plus instructive de la phase :
+
+| Entraînement à 4 relevés par lot | Taux | F1 moyen |
+|---|---|---|
+| montage retenu (résidu seul) | 0,5379 | 0,5002 |
+| normalisation par lot | 0,5476 | 0,5173 |
+| **normalisation par groupe (la correction)** | **0,5489** | **0,5132** |
+
+La normalisation par lot ne s'effondre pas à 4 — elle fait même le meilleur score
+mesuré du projet. Le bruit de ses statistiques agit comme une régularisation.
+**Le score ne révèle donc pas le défaut** : un montage peut gagner au score et
+être fautif sur le contrat. C'est le test du relevé seul qui tranche, pas le
+chiffre — la leçon de la phase 0, revenue sous une autre forme.
+
+#### La correction, et ce qu'elle coûte
+
+Modifier le modèle, pas le lot : la normalisation par **groupe** calcule les mêmes
+statistiques, mais dans le relevé seul. À 4 par lot, elle garde le gain
+(0,5489 / 0,5132) sans la dépendance : le bénéfice venait du bruit de gradient à
+petit lot et de la normalisation elle-même, pas du regard sur les voisins.
+
+Les deux courbes à 4, avant et après correction, sur la même figure (avec le
+montage retenu en repère) : `figures/phase07_quatre_par_lot.png`.
+
+Relancé à la taille de lot de la phase 6, sur les trois initialisations : pire
+essai **0,5359 / 0,5007** contre 0,5387 / 0,5018 en phase 6 — écart de 0,003,
+dans le bruit. **La correction ne coûte rien quand la machine va bien.**
+
+#### Et si on demande de prédire sur un seul relevé ?
+
+Le montage corrigé donne au relevé seul exactement la même sortie
+qu'accompagné — démontré ci-dessus. L'ancien montage, en mode entraînement, se
+normalise contre lui-même : sa « moyenne de lot » est le relevé même qu'il juge.
+En mode évaluation il s'appuie sur des moyennes mémorisées pendant
+l'entraînement — apprises sur des lots de 4, donc bruitées. Dans les deux cas, la
+prédiction d'un relevé passe par des statistiques qui ne le concernent pas.
 
 ### Phase 8 — le Conseil a lu trois relevés
 
