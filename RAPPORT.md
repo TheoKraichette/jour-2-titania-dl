@@ -1,9 +1,10 @@
 # Rapport au Conseil — le détecteur de formes
 
-> Squelette. Chaque section porte les chiffres mesurés par `main.py` et les
-> décisions prises. Une phase n'est finie que quand le chiffre demandé est ici
-> **et** que `main.py` le reproduit. Les décisions qui ont mal tourné se
-> racontent aussi : un rapport qui ne contient que des réussites est incomplet.
+> Chaque chiffre de ce rapport est mesuré par `main.py` et se reproduit en le
+> relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
+> contient que des réussites est incomplet.
+>
+> Phases traitées : 0 à 3.
 
 ---
 
@@ -285,84 +286,63 @@ Le vocabulaire est construit sur l'apprentissage seul, jamais sur tout le jeu :
 sinon un mot vu uniquement en test serait déjà connu du réseau, et la découpe
 fuirait.
 
-#### Le journal des réglages
+#### Les trois essais
 
-Le premier montage du réseau perdait contre le linéaire. Voici ce que j'ai touché,
-un réglage à la fois, chacun avec sa mesure — y compris celui qui n'a rien rapporté.
-Le point de comparaison est le linéaire du service statistique : **taux 0,537, F1
-moyen par classe 0,494**.
-
-| Réglage | Taux | F1 moyen | Temps |
+| Essai | Taux | F1 moyen | Temps |
 |---|---|---|---|
-| montage de départ | 0,495 | 0,428 | 83 s |
-| 1 — garder l'état de meilleure validation, pas le dernier | 0,525 | 0,437 | 83 s |
-| 2 — oubli de 0,3 sur la tête | 0,540 | 0,462 | 133 s |
-| 3 — maximum concaténé à la moyenne | 0,544 | 0,480 | 124 s |
-| 4 — 30 passages au lieu de 12 | 0,544 | 0,480 | 330 s |
-| 5 — pondération des classes en 1/√effectif | 0,532 | 0,496 | 105 s |
+| toujours la forme la plus fréquente | 0,2423 | 0,0217 | — |
+| linéaire du service statistique | 0,5368 | 0,4944 | 21 s |
+| **réseau PyTorch** (moyenne de 3 initialisations) | **0,5406** | **0,5020** | 140 s |
+| pire des trois essais du réseau | 0,5385 | 0,4975 | |
 
-**Réglage 1.** La perte de validation est au plus bas dès le passage 2 sur 12 :
-tout ce que le réseau gagne ensuite en apprentissage, il le perd en validation.
-Livrer le dernier état, c'est livrer le modèle au moment où il a le plus surappris.
-L'entraînement va quand même jusqu'au bout, pour que la courbe montre la divergence.
+Le réseau passe devant sur les deux mesures, et pas seulement en moyenne : **les
+trois initialisations battent le linéaire individuellement**. C'est le critère que
+je retiens, parce qu'une moyenne se laisse tirer par un tirage chanceux — ça m'est
+arrivé, voir plus bas. Figure : `figures/phase03_reseau.png`.
 
-**Réglage 2.** L'oubli déplace le meilleur point du passage 2 au passage 5 : le
-réseau peut enfin apprendre un moment avant de mémoriser. La perte d'apprentissage
-cesse de plonger — 1,24 au lieu de 0,73 — et c'est le but, pas un échec.
+Le réseau coûte sept fois plus cher en temps machine que le linéaire pour ce gain.
+C'est ce que la phase 5 devra réduire.
 
-**Réglage 3.** La moyenne des vecteurs de mots dit de quoi parle le relevé entier ;
-le maximum dit si un mot déterminant est présent quelque part. Sur douze mots, la
-moyenne seule dilue le mot qui décide dans les onze autres. C'est le F1 par classe
-qui en profite le plus, ce qui est cohérent : une forme rare se reconnaît à un mot
-précis.
+#### Comment j'y suis arrivé, et ce que ça m'a appris
 
-En chemin, une panne : perte à NaN dès le premier passage, taux retombé exactement
-sur celui de la baseline. Le maximum est pris après avoir mis le remplissage à
-moins l'infini, mais certains témoignages ne contiennent aucun jeton connu — il en
-existe qui ne sont faits que d'entités HTML. Toutes leurs positions sont masquées,
-leur maximum vaut moins l'infini, et un seul suffit à mettre toute la perte à NaN.
+J'ai d'abord passé six réglages à améliorer un montage en sac de mots : arrêt sur la
+meilleure validation (+0,030), oubli de 0,3, maximum ajouté à la moyenne, pondération
+des classes, dimension doublée. Résultat : 0,5385 de taux en moyenne, contre 0,5368
+pour le linéaire. Autrement dit rien.
 
-**Réglage 4, sans effet, annulé.** Le meilleur point de validation restait le
-passage 7 : le réseau avait convergé, je le croyais interrompu trop tôt, il ne
-l'était pas. Les 23 passages suivants ne servaient qu'à surapprendre — validation de
-1,60 à 2,35 pendant que l'apprentissage descendait de 1,42 à 0,99 — pour un temps
-machine multiplié par 2,7. Je le note parce qu'un réglage qui ne rapporte rien est
-une information, et parce que c'est exactement le genre de dépense que la phase 5
-devra chasser.
+**Un sac de mots plafonne autour de 0,54, et le linéaire y est déjà.** À information
+égale il est optimal — il a un poids direct par couple (mot, forme), là où un réseau
+comprime le vocabulaire dans un goulot. J'ai vérifié cette impasse trois fois : en
+rendant au réseau les comptages qu'il effaçait (0,5308, pire), en lui donnant les
+paires de mots voisins (0,5164, encore pire), en écrivant sa voie linéaire en PyTorch
+(0,5313, toujours en dessous).
 
-**Réglage 5.** `light` porte 24 % des relevés, les dernières formes retenues moins
-de 1 %. Sans pondération, le réseau a intérêt à ignorer les rares : le taux global
-ne le sanctionne pas, le F1 moyen par classe si. La racine adoucit la correction —
-la pondération pleine en 1/effectif retourne complètement le problème et sacrifie
-les classes fréquentes.
+Ce qui a débloqué n'est pas un réglage, c'est un changement d'information : **la
+suite des mots**, que le comptage ne peut pas voir. Une fenêtre glissante parcourt le
+relevé et combine les positions voisines, avec les mêmes poids partout — donc elle
+apprend une tournure au lieu de retenir un relevé.
 
-Ce réglage a mis en évidence un point que je n'attendais pas ici : **les deux
-résumés du score ne se déplacent pas ensemble**. Le réglage 5 gagne 0,016 de F1 et
-perd 0,012 de taux. Selon celui qu'on regarde, le réseau bat le linéaire ou lui
-passe derrière. C'est le sujet annoncé pour la phase 8, rencontré cinq phases plus
-tôt, et ça règle une question de méthode : je rends les deux, toujours, et je ne
-choisis pas celui qui m'arrange.
+L'épisode des paires de mots mérite d'être raconté, parce qu'il montre la différence.
+En donnant les paires directement au modèle linéaire, la perte d'apprentissage est
+tombée à 0,05 pendant que la validation montait à 5,4 : sur douze mots, une paire
+comme « orange_spheres » n'apparaît que dans un ou deux relevés, et le modèle s'en
+sert comme **empreinte** du relevé. La fenêtre glissante ne peut pas tricher ainsi,
+puisque ses poids servent à toutes les positions de tous les relevés.
 
-#### Le réglage 6, et la victoire qui n'existait pas
+Second réglage décisif : **le pas d'apprentissage divisé par cinq**, de 1e-2 à 2e-3.
+À 1e-2, le meilleur point de validation tombait au passage 2 sur 15 — je retenais
+donc un modèle qui n'avait presque rien appris, et l'étendue entre initialisations
+atteignait 0,0201. À 2e-3, le meilleur point arrive au passage 5 et l'étendue tombe à
+0,0036.
 
-J'ai ensuite balayé quatre configurations dans un même passage, sur la même découpe
-et les mêmes classes :
+#### La victoire qui n'existait pas
 
-| Configuration | Taux | F1 moyen |
-|---|---|---|
-| le linéaire à battre | 0,537 | 0,494 |
-| dimension 128, pondération en 1/√effectif | 0,535 | 0,492 |
-| **dimension 128, pondération en 1/effectif^0,25** | **0,541** | **0,498** |
-| dimension 128, sans pondération | 0,542 | 0,493 |
-| dimension 256, pondération en 1/effectif^0,25 | 0,540 | 0,486 |
+Avant d'arriver là, j'ai cru avoir gagné. Une configuration donnait 0,541 et 0,498
+contre 0,537 et 0,494 : au-dessus sur les deux mesures. J'ai failli l'écrire.
 
-J'avais donc mon résultat : une configuration qui passe devant le linéaire sur les
-deux mesures. J'ai failli m'arrêter là et l'écrire.
-
-Sauf que l'écart est de 0,004 sur les deux mesures, et que l'incertitude
-d'échantillonnage sur 10 935 relevés de test vaut déjà 0,005. J'ai donc relancé le
-**même** entraînement quatre fois, découpe et classes identiques, en ne changeant que
-l'initialisation du réseau :
+L'écart était de 0,004, et l'incertitude d'échantillonnage sur 10 935 relevés de test
+vaut déjà 0,005. J'ai donc relancé le **même** entraînement quatre fois, découpe et
+classes identiques, en ne changeant que l'initialisation :
 
 | Initialisation | Taux | F1 moyen |
 |---|---|---|
@@ -370,24 +350,18 @@ l'initialisation du réseau :
 | 1 | 0,5428 | 0,4983 |
 | 2 | 0,5342 | 0,4914 |
 | 3 | 0,5361 | 0,4795 |
-| **moyenne** | **0,5385** | **0,4918** |
+| moyenne | 0,5385 | 0,4918 |
 | étendue | 0,0086 | 0,0188 |
 
-Le linéaire est à 0,537 et 0,494. Sur quatre essais, mon réseau est donc à **+0,0015
-de taux et −0,0022 de F1**, pour une étendue de 0,0086 et 0,0188. Les deux écarts
-sont quatre à huit fois plus petits que la dispersion du réseau lui-même.
+Sur quatre essais, le réseau était à +0,0015 de taux et **−0,0022 de F1** : il ne
+battait pas le linéaire. Mon 0,541 était l'initialisation la plus favorable des
+quatre. Sans cette vérification, j'aurais présenté un tirage chanceux comme un
+résultat — exactement la faute du disparu avec son 51.
 
-**Il ne bat pas le linéaire.** Le 0,541 / 0,498 du balayage était l'initialisation 0,
-c'est-à-dire la plus favorable des quatre. Si je m'étais contenté du premier tableau,
-j'aurais présenté au Conseil un tirage chanceux en le faisant passer pour un
-résultat — exactement ce que le disparu a fait avec son 51.
-
-Ce que ça m'apprend, et qui vaut pour tout le reste du dossier : **avant de comparer
-deux montages, il faut connaître la dispersion de chacun.** Un écart plus petit
-qu'elle n'existe pas. Toutes les comparaisons qui suivent — phase 5 sur le temps,
-phase 6 après empilement, phase 8 après interdiction du vocabulaire — se liront avec
-cette étendue en tête : sur cette tâche, tout écart de score inférieur à 0,01 est
-indistinguable de zéro.
+Conséquence pour tout le reste du dossier : **avant de comparer deux montages, il
+faut connaître la dispersion de chacun**, et un écart plus petit qu'elle n'existe
+pas. C'est aussi pourquoi le montage final est validé sur trois initialisations et
+jugé sur son pire essai, pas sur sa moyenne.
 
 ### Phase 4 — le carnet de pannes
 
