@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 16.
+> Phases traitées : 0 à 17 — toutes.
 
 ---
 
@@ -1044,11 +1044,38 @@ vaisseau y gagnerait.
 
 ### Phase 17 — le faux témoignage
 
-| Réglage | Sortie obtenue |
-|---|---|
-| trop propre, répétitif | |
-| trop libre, invente des mots | |
-| retenu | |
+**La règle absolue est prouvée par le code** : l'empreinte des 82 millions de
+valeurs de distilgpt2 (SHA-256 des poids) est calculée avant le premier essai et
+après le dernier — `3c9be4832c2cb1e0` les deux fois. Aucune valeur n'a bougé, ni
+par entraînement ni par ajustement. La seule marge d'action est la façon de
+choisir chaque mot au moment d'écrire.
 
-Résultat du tri en aveugle : **à rendre même s'il est mauvais**.
-Preuve par le code qu'aucune valeur du modèle n'a bougé : **à joindre**.
+#### La grille, parcourue méthodiquement
+
+L'amorce est un étalon de style : trois vrais relevés du fichier, puis
+« Report: ». Deux boutons : la température (l'audace du tirage) et le nombre de
+mots candidats retenus à chaque pas.
+
+| Température | Candidats | Ce qui sort |
+|---|---|---|
+| 0,2 | 20 | « Bright Red light moving very fast across sky then disappeared. » — **trop propre** : la même phrase à chaque tirage, reconnaissable en deux secondes |
+| 0,5 | 20 | la même phrase, au mot près |
+| 0,7 | 50 | « …moving very slowly across sky then disappeared. » — une variation timide |
+| **0,9** | **50** | « Bright Red light moving like a tornado is moving at full speed off of the ho… » — **retenu** : la maladresse et la platitude d'un vrai témoin |
+| 1,2 | 200 | « Bright Red light emitting light emitting light is "large" in the sky… » — ça se répète en dérivant |
+| 1,6 | tous | « Jamaican pilot diedave spot... is "tree legs diffuse the spill that loose un… » — **n'importe où**, mots inventés |
+
+Les deux échecs exigés sont aux deux bouts, et le point utilisable entre les
+deux n'est pas tombé du ciel : la grille est parcourue dans l'ordre, chaque
+réglage avec sa sortie. **Réglage recommandé au Bureau : température 0,9,
+50 candidats.**
+
+#### Le tri en aveugle
+
+Cinq faux témoignages au réglage retenu, mélangés à cinq vrais relevés du
+fichier, l'ordre tiré au sort. Le tri a été fait par une personne qui ne savait
+pas lesquels étaient lesquels.
+
+*(résultat du tri : en attente — sera rendu tel quel, même mauvais)*
+
+
