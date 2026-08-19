@@ -31,34 +31,70 @@ class Empilement(nn.Module):
     """
 
     def __init__(self, taille_vocabulaire, nombre_classes, dimension=64,
-                 canaux=128, fenetre=3, couches=1, oubli=0.3):
+                 canaux=128, fenetre=3, dilatations=(1,), oubli=0.3, residuel=False,
+                 norme=None):
         super().__init__()
         self.vecteurs = nn.Embedding(taille_vocabulaire, dimension, padding_idx=0)
-        self.fenetre, self.couches_demandees = fenetre, couches
+        self.fenetre, self.dilatations, self.residuel = fenetre, dilatations, residuel
         entrees = dimension
         self.convolutions = nn.ModuleList()
-        for _ in range(couches):
+        self.normes = nn.ModuleList()
+        # La dilatation espace la fenêtre : une couche à dilatation d relie des
+        # positions distantes de d, donc l'étendue grandit exponentiellement avec
+        # la profondeur au lieu de linéairement. C'est ce qui permet de couvrir le
+        # relevé entier en quatre couches (phase 6) plutôt qu'en quatorze.
+        for dilatation in dilatations:
             self.convolutions.append(
-                nn.Conv1d(entrees, canaux, kernel_size=fenetre, padding=fenetre // 2)
+                nn.Conv1d(entrees, canaux, kernel_size=fenetre,
+                          padding=(fenetre // 2) * dilatation, dilation=dilatation)
+            )
+            # « lot » : normalise chaque canal avec les statistiques DU LOT — la
+            # sortie d'un relevé dépend alors des autres relevés du lot, ce que la
+            # phase 7 met en cause. « groupe » : mêmes statistiques, mais calculées
+            # dans le relevé seul — aucun regard sur les voisins.
+            self.normes.append(
+                nn.BatchNorm1d(canaux) if norme == "lot"
+                else nn.GroupNorm(1, canaux) if norme == "groupe"
+                else nn.Identity()
             )
             entrees = canaux
         self.oubli = nn.Dropout(oubli)
         self.tete = nn.Linear(canaux, nombre_classes)
 
     def etendue_par_couche(self):
-        """Ce que chaque couche ajoute à l'étendue vue, et le cumul. Phase 6."""
+        """Ce que chaque couche ajoute à l'étendue vue par une sortie, et le cumul.
+
+        Une convolution de fenêtre f et de dilatation d ajoute (f-1)·d : elle va
+        chercher (f-1)/2 positions de chaque côté, à d positions d'écart.
+        """
         etendue, lignes = 1, []
-        for numero in range(1, self.couches_demandees + 1):
-            ajout = self.fenetre - 1
+        for numero, dilatation in enumerate(self.dilatations, start=1):
+            ajout = (self.fenetre - 1) * dilatation
             etendue += ajout
-            lignes.append({"couche": numero, "ajout": ajout, "cumul": etendue})
+            lignes.append({"couche": numero, "dilatation": dilatation,
+                           "ajout": ajout, "cumul": etendue})
         return lignes
+
+    def cartes(self, jetons):
+        """Les sorties de l'empilement, position par position, avant le maximum.
+
+        Exposé pour la vérification expérimentale de la phase 6 : on y mesure
+        jusqu'où se propage la modification d'un mot.
+        """
+        sortie = self.vecteurs(jetons).transpose(1, 2)  # (relevés, canaux, positions)
+        for convolution, norme in zip(self.convolutions, self.normes):
+            couche = torch.relu(norme(convolution(sortie)))
+            # Connexion résiduelle : la couche apprend un écart plutôt qu'une
+            # transformation entière, et le gradient garde un chemin direct vers
+            # l'entrée. C'est la solution connue au problème connu de la phase 6 —
+            # l'empilement qui dégrade le score.
+            sortie = sortie + couche if (self.residuel
+                                         and couche.shape == sortie.shape) else couche
+        return sortie
 
     def forward(self, jetons):
         presents = (jetons != 0).unsqueeze(1)
-        sortie = self.vecteurs(jetons).transpose(1, 2)  # (relevés, canaux, positions)
-        for convolution in self.convolutions:
-            sortie = torch.relu(convolution(sortie))
+        sortie = self.cartes(jetons)
         # Le remplissage est mis hors jeu avant le maximum sur les positions, sinon
         # les positions vides voteraient. Le maximum plutôt que la moyenne : une
         # tournure décisive peut n'apparaître qu'une fois dans le relevé.

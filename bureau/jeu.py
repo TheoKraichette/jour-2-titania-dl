@@ -95,23 +95,57 @@ def construire(df, garder_fourre_tout=False, seuil=SEUIL_CLASSE):
     )
 
 
+# Phase 8 : les valeurs de `shape`, leurs variantes d'écriture, leurs pluriels, et
+# tout ce que la fusion des doublons a produit — complétés à la main, parce que la
+# morphologie automatique rate l'essentiel (lighted, circular, disc, conical…).
+# « fire ball » et « egg shaped » s'écrivent en deux mots : leurs morceaux porteurs
+# sont dedans ; « fire », « tear », « drop » ou « shaped » n'y sont pas, trop
+# généraux pour être des mots de forme.
+VARIANTES_DE_FORME = {
+    "light": ["lights", "lighted", "lighting", "lit", "lite"],
+    "triangle": ["triangles", "triangular"],
+    "circle": ["circles", "circled", "circling", "circular"],
+    "round": ["rounded", "rounds"],  # produit de la fusion round → circle
+    "fireball": ["fireballs", "ball", "balls"],
+    "disk": ["disks", "disc", "discs"],
+    "sphere": ["spheres", "spherical", "spheroid"],
+    "oval": ["ovals", "ovoid"],
+    "formation": ["formations"],
+    "cigar": ["cigars"],
+    "changing": ["changed", "changes", "change"],  # changed → changing : fusion
+    "flash": ["flashes", "flashing", "flashed"],
+    "rectangle": ["rectangles", "rectangular"],
+    "cylinder": ["cylinders", "cylindrical"],
+    "diamond": ["diamonds"],
+    "chevron": ["chevrons"],
+    "egg": ["eggs"],
+    "teardrop": ["teardrops"],
+    "cone": ["cones", "conical"],
+    "unknown": ["unknowns"],
+    "other": ["others"],
+}
+
+
 def mots_interdits(classes):
     """Phase 8 : le vocabulaire des formes, que la machine n'a pas le droit de lire.
 
-    Les valeurs de `shape`, leurs variantes d'écriture, leurs pluriels, et tout ce
-    que la fusion des doublons a produit. La liste part dans le rapport, et le code
-    doit prouver qu'il en reste zéro dans le texte traité.
+    La liste part dans le rapport, et le code doit prouver qu'il en reste zéro
+    dans le texte traité.
     """
     interdits = set()
-    for nom in list(classes) + list(FUSIONS) + list(FOURRE_TOUT):
-        mot = nom.lower()
-        interdits.update({mot, mot + "s", mot + "es"})
-        if mot.endswith("e"):
-            interdits.add(mot[:-1] + "ing")  # change → changing
-    # TODO phase 8 : compléter à la main les variantes que la morphologie rate
-    # (lights/lighted, fire ball, cigar-shaped, triangular…), les défendre dans
-    # le rapport, puis vérifier par le code qu'il en reste zéro.
+    for base, variantes in VARIANTES_DE_FORME.items():
+        interdits.add(base)
+        interdits.update(variantes)
+    for nom in classes:  # filet de sécurité si une classe manquait au tableau
+        interdits.update({nom, nom + "s"})
+    # Le découpage garde l'apostrophe : « light's » est un jeton à part entière.
+    interdits |= {mot + "'s" for mot in list(interdits)}
     return interdits
+
+
+def censurer(texte, interdits):
+    """Le texte d'un témoin, sans un seul mot de forme. Même découpage qu'ailleurs."""
+    return " ".join(mot for mot in jetons(texte) if mot not in interdits)
 
 
 class Vocabulaire:

@@ -44,6 +44,26 @@ def courbes_de_perte(historiques, nom, titre, abscisse="itération"):
     return poser(fig, nom)
 
 
+def parts_des_mots(mots, parts, nom, titre):
+    """Le témoignage mot par mot, avec la part de chaque mot dans la décision.
+
+    Phase 9 : lisible par quelqu'un qui ne code pas — les mots dans l'ordre du
+    témoignage, une barre par mot, les barres vers la droite ont poussé la
+    décision, celles vers la gauche l'ont freinée.
+    """
+    fig, ax = plt.subplots(figsize=(7, max(3, 0.32 * len(mots) + 1.2)))
+    positions = range(len(mots))
+    couleurs = ["#2a7" if p >= 0 else "#c55" for p in parts]
+    ax.barh(positions, parts, color=couleurs)
+    ax.set_yticks(positions, mots)
+    ax.invert_yaxis()  # le premier mot du témoignage en haut
+    ax.axvline(0, color="black", linewidth=0.8)
+    ax.set_xlabel("part du mot dans la décision (perte de confiance si on le retire)")
+    ax.set_title(titre)
+    ax.grid(alpha=0.3, axis="x")
+    return poser(fig, nom)
+
+
 def matrice_d_attention(poids, jetons_lignes, jetons_colonnes, nom, titre):
     """Une case par couple de mots, les mots eux-mêmes en étiquettes.
 
