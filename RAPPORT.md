@@ -44,11 +44,53 @@ a 8 baisses d'une année sur l'autre sur la date d'observation, 4 sur la date de
 publication. C'est une tendance, pas une monotonie. Figure :
 `figures/phase00_volume_annuel.png`.
 
-**À écrire :** une phrase par chiffre, disant à quelle question il répond exactement.
+#### À quelle question chaque chiffre répond
+
+C'est le point qui manquait au dossier du disparu : ses chiffres étaient justes,
+mais il ne disait pas ce qu'ils mesuraient, et c'est ce flou qui a permis de leur
+faire dire autre chose.
+
+**8 894 jours** répond à : sur quelle étendue de temps la transmission s'étale-t-elle,
+du premier au dernier relevé ? Ce n'est pas le nombre de jours où quelque chose a
+été signalé — il n'y a de relevés que sur 7 663 journées distinctes. C'est le
+dénominateur de la moyenne suivante, et rien d'autre.
+
+**9,2 relevés par jour** répond à : combien de signalements une journée quelconque
+de la période porte-t-elle en moyenne ? C'est un repère, celui qui permet de dire
+qu'une journée est chargée ou non. Ce n'est pas le nombre d'observations d'un jour
+typique : la distribution est très déséquilibrée, la moyenne est tirée vers le haut
+par les dernières années et par une poignée de journées énormes.
+
+**51 relevés un 4 juillet** répond à : combien de signalements un 4 juillet porte-t-il
+en moyenne, sur les 24 4 juillet couverts par la transmission ? Le dénominateur est
+le nombre de 4 juillet de la période, pas le nombre d'années où il s'est trouvé un
+relevé ce jour-là — une année sans aucun signalement le 4 juillet compte comme un
+4 juillet à zéro. En divisant par 23 au lieu de 24, on obtient 53 et on ne retombe
+plus sur le dossier.
+
+**17,7 % le samedi et 12,6 % le lundi** répondent à : comment les signalements se
+répartissent-ils sur les sept jours de la semaine ? Ils mesurent une habitude
+humaine — on sort le samedi soir — et pas une activité du ciel, qui n'a aucune
+raison de connaître les jours de la semaine.
+
+**11,3 % en juillet et 6,2 % en février** répondent à la même question sur les douze
+mois. Là encore, cela parle du comportement des témoins : les nuits d'été sont
+douces et on est dehors.
+
+**206 relevés le 4 juillet 2010** répond à : quelle est la journée la plus chargée de
+toute la transmission, et combien porte-t-elle ? C'est un maximum ponctuel, sur une
+seule journée d'une seule année, pas une moyenne.
+
+**Rang 1 sur 7 663 journées** répond à : où se situe le 4 juillet dans le classement
+des journées les plus chargées ? Quatre des cinq premières places sont des 4 juillet,
+mais toutes se situent entre 2009 et 2013.
+
+Sur la date, enfin : j'utilise `datetime`, la date de l'observation, parce que toutes
+ces questions portent sur le moment où les gens ont regardé le ciel. `date_posted`
+répond à une autre question, celle de savoir quand le Bureau a enregistré le
+formulaire, et elle donne d'ailleurs une courbe annuelle différente.
 
 ### Phase 1 — le chiffre était vrai, la flotte est perdue
-
-> Brouillon à relire et à réécrire à ma main avant remise.
 
 #### Ce que le chiffre disait réellement
 
@@ -151,8 +193,35 @@ Tâche : `comments` entre, une forme sort.
 Ce que ce test prouve : le montage relie l'entrée à la sortie et la correction
 circule. Ce qu'il ne prouve pas : qu'il apprendra quoi que ce soit de généralisable.
 
-**À écrire :** ce qui a été changé et dans quel ordre, si ça n'a pas marché du
-premier coup.
+#### Ce qui a cédé, dans l'ordre
+
+Ça n'a pas marché du premier coup, mais pas comme je l'attendais : le montage a
+réussi le test trop vite, et c'est le test qui était faux.
+
+**Premier essai.** J'avais écrit exactement ce que demande l'énoncé : entraîner
+jusqu'à ne plus se tromper sur un seul des 8 relevés, et rendre le nombre
+d'itérations qu'il a fallu. Le script a annoncé 1 itération, 8/8 justes, perte 2,88.
+Le chiffre de la perte m'a arrêté : ln(18) vaut 2,89, c'est-à-dire qu'un modèle qui
+répondrait au hasard sur 18 classes aurait cette perte-là. Le montage avait donc
+« réussi » sans avoir rien appris.
+
+**Ce que j'ai compris.** Avec seulement 8 relevés dont les mots sont presque tous
+différents, un seul pas d'optimisation suffit à pousser le bon logit au-dessus des
+17 autres pour chacun des 8. Les prédictions deviennent justes alors que les
+probabilités sont encore quasi uniformes. Sur 8 exemples, « ne plus se tromper » est
+un critère qui se satisfait par accident.
+
+**Ce que j'ai changé.** Un seul geste : le critère d'arrêt. Je continue jusqu'à ce
+que la perte passe sous 1e-3, et je relève au passage l'itération où les 8
+prédictions deviennent justes. Le script rend maintenant les deux nombres, parce que
+l'écart entre les deux est le résultat intéressant : 2 pour les prédictions, 17 pour
+la mémorisation réelle.
+
+**Ce que ça m'a appris pour la suite.** Un compte de bonnes réponses sur un petit
+échantillon ne prouve pas qu'un montage apprend, et un chiffre ne vaut rien sans la
+valeur à laquelle on le compare. Ici c'est ln(18) qui a servi de révélateur : sans
+ce point de comparaison, j'aurais validé le test d'acceptation sur un montage dont je
+ne savais rien.
 
 ### Phase 3 — battre le service statistique
 
