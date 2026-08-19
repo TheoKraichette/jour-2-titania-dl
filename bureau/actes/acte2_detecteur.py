@@ -346,20 +346,141 @@ def phase03(dossier, iterations=25, taille_lot=256, pas=2e-3, graines=(0, 1, 2))
 
 
 
-def phase04(dossier):
-    """Le carnet de pannes."""
+def phase04(dossier, iterations=8, taille_lot=256):
+    """Le carnet de pannes.
+
+    Le montage de la phase 3, cassé volontairement trois fois, une panne à la fois,
+    remis d'aplomb entre chaque. Le Conseil ne veut pas un modèle qui marche : il
+    veut la preuve qu'on sait reconnaître un modèle qui ne marche pas.
+    """
     titre(4, "le carnet de pannes")
-    a_faire(
-        """
-        Casser volontairement le montage de la phase 3, trois fois, une panne à la fois,
-        en remettant tout d'aplomb entre chaque. Trois natures différentes :
-          1. excellent à l'entraînement, bête dès l'évaluation, sans qu'une donnée ait changé ;
-          2. la perte descend proprement, les prédictions sont pires que le hasard ;
-          3. la perte se fige et n'en bouge plus.
-        Par panne, une fiche de trois lignes : le geste exact, la signature sur les courbes
-        (une figure), le test qui la distingue des deux autres en moins d'une minute.
-        """
+
+    entrees = {}
+    for partie in ("apprentissage", "validation", "test"):
+        entrees[partie], entrees[f"cibles_{partie}"] = tenseurs(dossier, partie)
+    lots_app = jeu.lots(entrees["apprentissage"], entrees["cibles_apprentissage"],
+                        taille=taille_lot, graine=dossier.graine)
+    lots_val = jeu.lots(entrees["validation"], entrees["cibles_validation"],
+                        taille=1024, melanger=False)
+    lots_test = jeu.lots(entrees["test"], entrees["cibles_test"],
+                         taille=1024, melanger=False)
+    hasard = torch.tensor(float(len(dossier.classes))).log().item()
+    fiches, courbes = [], {}
+
+    def monter(pas=2e-3, oubli=0.3, cibles=None, perte=None):
+        entrainement.fixer_graine(dossier.graine)
+        modele = modeles.Empilement(len(dossier.vocabulaire), len(dossier.classes),
+                                    oubli=oubli)
+        lots = lots_app if cibles is None else jeu.lots(
+            entrees["apprentissage"], cibles, taille=taille_lot, graine=dossier.graine)
+        historique = entrainement.entrainer(
+            modele, lots, lots_val, iterations=iterations, pas=pas,
+            releve_tous_les=1, bavard=False, perte=perte)
+        return modele, historique
+
+    # --- Le montage sain, pour avoir le point de comparaison -----------------
+    print("  montage sain (référence)")
+    modele, historique = monter()
+    predits, vrais = entrainement.predire(modele, lots_test)
+    reference = mesures.taux_de_reussite(predits, vrais)
+    courbes["montage sain"] = (historique["passage"], historique["perte_validation"])
+    print(f"    taux sur le test : {reference:.3f}   perte finale "
+          f"{historique['perte'][-1]:.3f}")
+
+    # --- Panne 1 : l'oubli retiré, l'entraînement prolongé --------------------
+    # Le geste : retirer l'oubli et laisser tourner. Le réseau apprend les relevés
+    # d'apprentissage par coeur — il les récite — et n'a plus rien à dire sur les
+    # autres. Aucune donnée n'a changé entre les deux mesures ci-dessous.
+    print("\n  panne 1 — l'oubli retiré, l'entraînement prolongé")
+    modele_par_coeur, historique_coeur = monter(oubli=0.0)
+    lots_app_ordonnes = jeu.lots(entrees["apprentissage"],
+                                 entrees["cibles_apprentissage"],
+                                 taille=1024, melanger=False)
+    predits_app, vrais_app = entrainement.predire(modele_par_coeur, lots_app_ordonnes)
+    predits_par_coeur, _ = entrainement.predire(modele_par_coeur, lots_test)
+    taux_app = mesures.taux_de_reussite(predits_app, vrais_app)
+    taux_malade = mesures.taux_de_reussite(predits_par_coeur, vrais)
+    courbes["panne 1 — apprend par coeur"] = (historique_coeur["passage"],
+                                              historique_coeur["perte_validation"])
+    print(f"    taux sur les relevés d'apprentissage : {taux_app:.3f}")
+    print(f"    taux sur les relevés de test         : {taux_malade:.3f}"
+          f"   (montage sain : {reference:.3f})")
+    print(f"    perte de validation : {historique_coeur['perte_validation'][0]:.3f} → "
+          f"{historique_coeur['perte_validation'][-1]:.3f} — elle remonte")
+    fiches.append({
+        "titre": "excellent à l'entraînement, bête à l'évaluation",
+        "geste": "retirer l'oubli et prolonger l'entraînement",
+        "signature": "les deux courbes divergent — l'apprentissage descend, la "
+                     "validation remonte ; l'écart entre les deux ne cesse de croître",
+        "test": "évaluer sur les relevés d'apprentissage : si le score y est très "
+                "supérieur à celui du test, le réseau récite au lieu de généraliser",
+        "mesure": f"{taux_app:.3f} en apprentissage contre {taux_malade:.3f} en test",
+    })
+
+    # --- Panne 2 : les étiquettes décalées -----------------------------------
+    # Le geste : décaler toutes les cibles d'un cran. Le réseau apprend une tâche
+    # cohérente — donc la perte descend proprement — mais ce n'est pas la nôtre.
+    print("\n  panne 2 — les étiquettes décalées d'un cran à l'apprentissage")
+    decalees = (entrees["cibles_apprentissage"] + 1) % len(dossier.classes)
+    modele_decale, historique_decale = monter(cibles=decalees)
+    predits_decale, _ = entrainement.predire(modele_decale, lots_test)
+    taux_decale = mesures.taux_de_reussite(predits_decale, vrais)
+    courbes["panne 2 — étiquettes décalées"] = (historique_decale["passage"],
+                                                historique_decale["perte"])
+    print(f"    perte d'apprentissage : {historique_decale['perte'][0]:.3f} → "
+          f"{historique_decale['perte'][-1]:.3f} (elle descend proprement)")
+    print(f"    taux sur le test      : {taux_decale:.3f}   "
+          f"le hasard donnerait {1 / len(dossier.classes):.3f}")
+    fiches.append({
+        "titre": "la perte descend, les prédictions sont pires que le hasard",
+        "geste": "décaler les étiquettes d'un cran avant l'apprentissage",
+        "signature": "courbe d'apprentissage parfaitement saine, score de test "
+                     "au niveau du hasard ou en dessous",
+        "test": "regarder la matrice de confusion : si les erreurs sont "
+                "concentrées sur une diagonale décalée, l'alignement est en cause",
+        "mesure": f"{taux_decale:.3f} pour un hasard à {1 / len(dossier.classes):.3f}",
+    })
+
+    # --- Panne 3 : le pas d'apprentissage resté à zéro ------------------------
+    # Le geste : le pas ne parvient jamais à l'optimiseur — variable écrasée,
+    # planificateur mal branché, ou simplement l'appel à optimiseur.step() oublié.
+    # Le montage est parfait, la boucle tourne, et rien n'apprend.
+    print("\n  panne 3 — le pas d'apprentissage n'arrive jamais à l'optimiseur")
+    modele_fige, historique_fige = monter(pas=0.0)
+    courbes["panne 3 — pas démesuré"] = (historique_fige["passage"],
+                                         historique_fige["perte"])
+    pertes = historique_fige["perte"]
+    print(f"    perte : {pertes[0]:.4f} → {pertes[-1]:.4f}   "
+          f"(le hasard vaut ln({len(dossier.classes)}) = {hasard:.4f})")
+    print(f"    variation sur les {len(pertes)} derniers passages : "
+          f"{max(pertes[1:]) - min(pertes[1:]):.2e}")
+    fiches.append({
+        "titre": "la perte se fige et n'en bouge plus",
+        "geste": "le pas d'apprentissage reste à zéro : la boucle tourne, "
+                 "rien ne se met à jour",
+        "signature": f"la perte colle à ln(nombre de classes) = {hasard:.2f} "
+                     "dès le premier passage et ne varie plus d'une décimale",
+        "test": "comparer un poids avant et après un passage : s'il est "
+                "identique au bit près, rien n'apprend",
+        "mesure": f"{pertes[-1]:.4f} contre {hasard:.4f}",
+    })
+
+    courbes["montage sain"] = (historique["passage"], historique["perte"])
+    figures.courbes_de_perte(
+        courbes, "phase04_carnet_de_pannes.png",
+        "Phase 4 — trois pannes, trois signatures",
+        abscisse="passage sur les données",
     )
+
+    print("\n  Le carnet")
+    for numero, fiche in enumerate(fiches, start=1):
+        print(f"\n  {numero}. {fiche['titre']}\n     mesure    : {fiche['mesure']}")
+        print(f"     geste     : {fiche['geste']}")
+        print(f"     signature : {fiche['signature']}")
+        print(f"     test      : {fiche['test']}")
+
+    return dossier.retenir(4, reference=reference, panne1=taux_malade,
+                           panne2=taux_decale, panne3=pertes[-1], hasard=hasard)
 
 
 def phase05(dossier):

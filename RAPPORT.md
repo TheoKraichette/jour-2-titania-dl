@@ -365,11 +365,39 @@ jugé sur son pire essai, pas sur sa moyenne.
 
 ### Phase 4 — le carnet de pannes
 
-| Panne | Le geste exact | Signature sur les courbes | Le test qui la distingue |
+Le montage de la phase 3, cassé trois fois, une panne à la fois, remis d'aplomb
+entre chaque. Montage sain de référence : **0,546** sur le test.
+Figure : `figures/phase04_carnet_de_pannes.png`.
+
+| Panne | Le geste exact | Signature | Le test, en moins d'une minute |
 |---|---|---|---|
-| bon à l'entraînement, bête à l'évaluation | | | |
-| perte qui descend, prédictions pires que le hasard | | | |
-| perte figée | | | |
+| **1.** excellent à l'entraînement, bête à l'évaluation | retirer l'oubli et prolonger l'entraînement | les deux courbes divergent : l'apprentissage descend pendant que la validation remonte (1,684 → 1,818) | évaluer sur les relevés **d'apprentissage** : 0,716 contre 0,516 en test |
+| **2.** la perte descend, les prédictions sont pires que le hasard | décaler les étiquettes d'un cran avant l'apprentissage | courbe d'apprentissage parfaitement saine (2,031 → 1,382), score de test au ras du sol | regarder la matrice de confusion : les erreurs forment une diagonale **décalée** |
+| **3.** la perte se fige | le pas d'apprentissage n'arrive jamais à l'optimiseur | la perte ne bouge pas de la 3ᵉ décimale dès le premier passage (3,1694 → 3,1692) | comparer un poids avant et après un passage : identique au bit près |
+
+**Panne 1 — 0,716 en apprentissage contre 0,516 en test.** Le réseau récite les
+relevés qu'on lui a montrés. Le point important est qu'**aucune donnée n'a changé**
+entre les deux mesures : c'est le même modèle, sur le même fichier, et c'est le
+choix de la partie évaluée qui révèle la panne.
+
+**Panne 2 — 0,038 alors que le hasard donne 0,056.** C'est la plus sournoise : la
+courbe d'apprentissage est irréprochable, elle descend proprement, et un rapport qui
+ne rendrait que cette courbe ressemblerait à un succès. Le réseau a parfaitement
+appris une tâche — simplement pas la nôtre. Être *sous* le hasard est la signature :
+un modèle qui se trompe systématiquement en sait autant qu'un modèle juste, il est
+mal branché.
+
+**Panne 3 — perte figée à 3,1692.** Elle ne tombe pas exactement sur
+ln(18) = 2,8904, et c'est instructif : les poids de départ ne sont pas nuls, donc le
+réseau démarre avec des préférences arbitraires qu'il ne corrigera jamais. Il fait
+donc légèrement pire que le hasard parfait, et pour toujours.
+
+**Comment je les distingue sur une courbe inconnue.** Si les deux courbes divergent,
+c'est la 1. Si elles descendent toutes les deux normalement, la panne n'est pas dans
+l'entraînement mais dans le branchement des étiquettes, c'est la 2. Si la courbe est
+plate dès le premier passage, c'est la 3. Une seule question suffit à trancher :
+**est-ce que la perte bouge ?** Non → panne 3. Oui et les deux courbes divergent →
+panne 1. Oui et elles restent ensemble → panne 2.
 
 ### Phase 5 — le budget de calcul
 
