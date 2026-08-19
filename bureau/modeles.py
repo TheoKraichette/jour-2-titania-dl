@@ -158,6 +158,28 @@ class DeuxTetes(nn.Module):
         return self.recolle(torch.cat(sorties, dim=-1)), poids
 
 
+class AjoutBasRang(nn.Module):
+    """Acte 4, troisième régime : de très petites quantités de valeurs ajoutées
+    à côté de celles du modèle emprunté, qui reste intact.
+
+    La couche d'origine est gelée ; on lui ajoute un détour de rang faible,
+    B(A(x)) : A projette vers un espace minuscule, B en revient. Seuls A et B
+    s'entraînent — quelques milliers de valeurs contre des millions.
+    """
+
+    def __init__(self, couche, rang=4):
+        super().__init__()
+        self.couche = couche
+        for parametre in self.couche.parameters():
+            parametre.requires_grad = False
+        self.vers_petit = nn.Linear(couche.in_features, rang, bias=False)
+        self.depuis_petit = nn.Linear(rang, couche.out_features, bias=False)
+        nn.init.zeros_(self.depuis_petit.weight)  # au départ, le détour ne change rien
+
+    def forward(self, entree):
+        return self.couche(entree) + self.depuis_petit(self.vers_petit(entree))
+
+
 def geler(module, sauf=()):
     """Acte 4, premier régime : le cerveau emprunté ne bouge pas d'une valeur.
 

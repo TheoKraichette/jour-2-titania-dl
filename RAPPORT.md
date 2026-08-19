@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 13.
+> Phases traitées : 0 à 14.
 
 ---
 
@@ -893,16 +893,42 @@ Ligne de référence : le score de la phase 8, vocabulaire des formes interdit.
 
 ### Phase 14 — le cerveau emprunté, et sa facture
 
-Modèle emprunté : **à choisir**.
+Le cerveau choisi : **bert-tiny** (`google/bert_uncased_L-2_H-128_A-2`), 4,4
+millions de valeurs, deux couches — librement récupérable et, surtout, assez
+petit pour cette machine sans accélérateur, ce qui est la contrainte de l'acte.
+Il travaille sur les mêmes relevés censurés, la même découpe et la même perte
+pondérée que la phase 8 ; seul son découpage en jetons lui appartient, et c'est
+le changement documenté. Une initialisation par régime : les écarts rendus sont
+grands devant la dispersion de 0,01 mesurée en phase 3.
 
-| Régime | Score | Valeurs modifiées | Temps / passage | Mémoire max | Poids à sauvegarder |
+| Régime | Taux | F1 | Valeurs modifiées | s/passage | À sauvegarder |
 |---|---|---|---|---|---|
-| réseau de la phase 8 (référence) | | | | | |
-| 1 — rien ne bouge | | | | | |
-| 2 — une partie dégelée | | | | | |
-| 3 — petites valeurs ajoutées | | | | | |
+| réseau de la phase 8 (référence) | **0,3299** | **0,1547** | 1,3 M (toutes) | ~25 | — |
+| 1 — gelé, tête seule | 0,2742 | 0,0650 | 2 322 | 70 | 0,01 Mo |
+| 2 — dégel partiel, dernière couche | 0,3109 | 0,1261 | 217 106 | 93 | 0,87 Mo |
+| 3 — valeurs ajoutées, rang 4 | 0,3107 | 0,1167 | **6 418** | 95 | 0,03 Mo |
 
-**À trancher en une phrase :** lequel le Bureau peut se payer, et pourquoi.
+(la mémoire de pic du processus tourne autour de 1,2 Go dans les trois cas ; le
+dégel partiel touche la dernière couche dix fois plus lentement que la tête —
+elle sait déjà lire, la tête ne sait encore rien ; le régime 3 ajoute des
+détours de rang 4 aux couches d'attention, le cerveau restant intact.)
+
+**Aucun régime ne bat le réseau maison, et c'est le résultat.** Le cerveau assez
+petit pour notre machine est trop petit pour battre un montage taillé pour la
+tâche et entraîné en entier : « ce qui est gros est bon » suppose du gros, et
+bert-tiny est un cerveau de poche — deux couches là où les fermes de calcul
+terriennes en entraînent des dizaines. La comparaison des régimes entre eux
+reste instructive : geler tout ne suffit pas (le résumé généraliste de bert-tiny
+ne sépare pas des formes d'ovnis), et **le régime 3 égale le dégel partiel en
+modifiant 34 fois moins de valeurs** (6 418 contre 217 106) pour une sauvegarde
+30 fois plus légère.
+
+**La phrase du Conseil : le Bureau garde son réseau maison pour classer** — il
+est meilleur, deux à quatre fois plus rapide par passage, et entièrement à nous.
+Si un cerveau emprunté devient nécessaire (les phases suivantes lisent et
+écrivent, ce que le nôtre ne sait pas faire), le seul régime que le Bureau peut
+se payer est le troisième : le cerveau intact, quelques milliers de valeurs à
+côté, 0,03 Mo à sauvegarder.
 
 ### Phase 15 — le Conseil pose des questions, vous citez vos sources
 

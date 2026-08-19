@@ -9,7 +9,7 @@ matplotlib>=3.8
 # Le « service statistique » de la phase 3 : linéaire sur comptages de mots.
 scikit-learn>=1.5
 
-# Acte 4 — à décommenter en arrivant à la phase 14 (cerveau emprunté).
-# transformers>=4.44
-# tokenizers>=0.19
-# peft>=0.12
+# Acte 4 — le cerveau emprunté et son découpage en jetons.
+transformers>=4.44
+tokenizers>=0.19
+sentencepiece>=0.2
