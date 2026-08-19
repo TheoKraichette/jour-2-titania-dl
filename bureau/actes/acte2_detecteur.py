@@ -238,11 +238,24 @@ def phase03(dossier, iterations=12):
     lots_apprentissage = jeu.lots(*parties["apprentissage"], taille=64,
                                   graine=dossier.graine)
     lots_validation = jeu.lots(*parties["validation"], taille=256, melanger=False)
+    # Les classes sont très déséquilibrées : « light » porte 24 % des relevés, les
+    # dernières formes retenues moins de 1 %. Sans pondération, le réseau a intérêt
+    # à ignorer les rares, ce que le taux global ne sanctionne pas mais que le F1
+    # moyen par classe voit tout de suite. La racine adoucit la correction : la
+    # pondération pleine (1/effectif) retourne complètement le problème et sacrifie
+    # les classes fréquentes.
+    effectifs = torch.bincount(etiquettes_apprentissage).float()
+    poids = effectifs.rsqrt()
+    poids = poids / poids.mean()
+    print(f"    pondération des classes : de {poids.min():.2f} ({dossier.classes[int(poids.argmin())]})"
+          f" à {poids.max():.2f} ({dossier.classes[int(poids.argmax())]})")
+
     with Chrono("réseau PyTorch") as chrono:
         historique = entrainement.entrainer(
             modele, lots_apprentissage, lots_validation,
             iterations=iterations, pas=3e-3, releve_tous_les=1,
             garder_le_meilleur=True,
+            perte=torch.nn.CrossEntropyLoss(weight=poids),
         )
     predits, vrais = entrainement.predire(
         modele, jeu.lots(*parties["test"], taille=256, melanger=False)
