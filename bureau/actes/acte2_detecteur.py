@@ -170,105 +170,127 @@ def montrer_le_trajet(dossier):
           f"remplace chaque entier par un vecteur appris.")
 
 
-def service_statistique(dossier, tenseurs_par_partie):
+def textes_et_etiquettes(dossier, partie):
+    return (
+        [dossier.textes[i] for i in dossier.decoupe[partie]],
+        [dossier.etiquettes[i] for i in dossier.decoupe[partie]],
+    )
+
+
+def service_statistique(dossier):
     """« Un modèle linéaire simple sur des comptages de mots, monté en une pause. »
 
-    Même découpe, mêmes classes et même découpage en jetons que le réseau : ce qui
-    change entre les deux essais est le modèle, rien d'autre.
+    L'adversaire est monté à pleine puissance : régression logistique menée à
+    convergence, et non quelques passages de descente stochastique. Le battre en
+    l'affaiblissant ne prouverait rien.
+
+    Il reçoit EXACTEMENT la même entrée que le réseau — mêmes jetons, mêmes paires
+    de mots, même seuil de fréquence. Ce qui change entre les deux essais est le
+    modèle, rien d'autre.
     """
     from sklearn.feature_extraction.text import CountVectorizer
     from sklearn.linear_model import LogisticRegression
 
-    parties = {
-        nom: (
-            [dossier.textes[i] for i in dossier.decoupe[nom]],
-            [dossier.etiquettes[i] for i in dossier.decoupe[nom]],
-        )
-        for nom in ("apprentissage", "test")
-    }
+    textes_app, etiquettes_app = textes_et_etiquettes(dossier, "apprentissage")
+    textes_test, etiquettes_test = textes_et_etiquettes(dossier, "test")
 
     comptages = CountVectorizer(analyzer=jeu.jetons, min_df=2)
     with Chrono("linéaire du service statistique") as chrono:
-        x_apprentissage = comptages.fit_transform(parties["apprentissage"][0])
         linéaire = LogisticRegression(max_iter=1000)
-        linéaire.fit(x_apprentissage, parties["apprentissage"][1])
+        linéaire.fit(comptages.fit_transform(textes_app), etiquettes_app)
 
-    predits = linéaire.predict(comptages.transform(parties["test"][0]))
-    print(f"    vocabulaire du linéaire : {len(comptages.vocabulary_)} mots")
-    return (
-        torch.tensor(predits),
-        torch.tensor(parties["test"][1]),
-        chrono.secondes,
-    )
+    predits = linéaire.predict(comptages.transform(textes_test))
+    print(f"    jetons vus par le linéaire : {len(comptages.vocabulary_)}")
+    return torch.tensor(predits), torch.tensor(etiquettes_test), chrono.secondes
+def essai_du_reseau(dossier, entrees, poids, graine, iterations, taille_lot, pas):
+    """Un entraînement complet du réseau, rendu avec ses prédictions et sa courbe."""
+    entrainement.fixer_graine(graine)
+    modele = modeles.Empilement(len(dossier.vocabulaire), len(dossier.classes))
+    with Chrono() as chrono:
+        historique = entrainement.entrainer(
+            modele,
+            jeu.lots(entrees["apprentissage"], entrees["cibles_apprentissage"],
+                     taille=taille_lot, graine=graine),
+            jeu.lots(entrees["validation"], entrees["cibles_validation"],
+                     taille=1024, melanger=False),
+            iterations=iterations, pas=pas, releve_tous_les=1,
+            garder_le_meilleur=True, bavard=(graine == dossier.graine),
+            perte=torch.nn.CrossEntropyLoss(weight=poids),
+        )
+    predits, vrais = entrainement.predire(
+        modele, jeu.lots(entrees["test"], entrees["cibles_test"],
+                         taille=1024, melanger=False))
+    return predits, vrais, historique, chrono.secondes
 
 
-def phase03(dossier, iterations=12):
+def phase03(dossier, iterations=25, taille_lot=256, pas=2e-3, graines=(0, 1, 2)):
     """Battre le service statistique.
 
-    Trois scores côte à côte, sur exactement la même découpe et les mêmes classes :
-    la baseline qui répond toujours la forme la plus fréquente, le linéaire sur
-    comptages de mots, et le réseau PyTorch. Le réseau doit passer devant.
+    Trois scores côte à côte, sur exactement la même découpe, les mêmes classes et
+    la même entrée : la baseline qui répond toujours la forme la plus fréquente, le
+    linéaire sur comptages, et le réseau PyTorch.
+
+    Le réseau est mesuré sur plusieurs initialisations, pas une seule : sur cette
+    tâche la dispersion atteint 0,009 en taux, donc un écart plus petit qu'elle ne
+    veut rien dire. C'est la moyenne qui est rendue au Conseil, avec son étendue.
     """
     titre(3, "battre le service statistique")
-    entrainement.fixer_graine(dossier.graine)
 
     justifier_les_decisions(dossier)
     montrer_le_trajet(dossier)
 
-    parties = {nom: tenseurs(dossier, nom)
-               for nom in ("apprentissage", "validation", "test")}
-    etiquettes_apprentissage = parties["apprentissage"][1]
+    # L'entrée commune aux deux modèles : les mêmes relevés, le même découpage en
+    # jetons, le même vocabulaire construit sur l'apprentissage seul. Le linéaire en
+    # compte les occurrences, le réseau en garde la suite — c'est là toute la
+    # différence, et c'est le seul avantage qu'il puisse revendiquer.
+    entrees = {}
+    for partie in ("apprentissage", "validation", "test"):
+        entrees[partie], entrees[f"cibles_{partie}"] = tenseurs(dossier, partie)
+    print(f"\n  entrée commune : {len(dossier.vocabulaire)} mots, "
+          f"séquences de {dossier.longueur} positions")
+
+    vrais = entrees["cibles_test"]
 
     print("\n  Essai 1 — toujours la forme la plus fréquente")
-    _, vrais = parties["test"]
-    majoritaire = int(torch.bincount(etiquettes_apprentissage).argmax())
+    majoritaire = int(torch.bincount(entrees["cibles_apprentissage"]).argmax())
     print(f"    forme choisie           : {dossier.classes[majoritaire]}")
-    mesures.montrer("baseline", torch.full_like(vrais, majoritaire), vrais,
-                    dossier.classes)
+    predits_baseline = torch.full_like(vrais, majoritaire)
+    mesures.montrer("baseline", predits_baseline, vrais, dossier.classes)
 
-    print("\n  Essai 2 — le linéaire du service statistique (comptages de mots)")
-    predits_lineaire, vrais_lineaire, temps_lineaire = service_statistique(
-        dossier, parties
-    )
-    mesures.montrer("linéaire", predits_lineaire, vrais_lineaire, dossier.classes)
+    print("\n  Essai 2 — le linéaire du service statistique, mené à convergence")
+    predits_lineaire, _, temps_lineaire = service_statistique(dossier)
+    mesures.montrer("linéaire", predits_lineaire, vrais, dossier.classes)
 
-    print("\n  Essai 3 — le réseau PyTorch")
-    modele = modeles.SacDeMots(len(dossier.vocabulaire), len(dossier.classes),
-                               dimension=128, cachee=256, oubli=0.3)
-    lots_apprentissage = jeu.lots(*parties["apprentissage"], taille=64,
-                                  graine=dossier.graine)
-    lots_validation = jeu.lots(*parties["validation"], taille=256, melanger=False)
-    # Les classes sont très déséquilibrées : « light » porte 24 % des relevés, les
-    # dernières formes retenues moins de 1 %. Sans pondération, le réseau a intérêt
-    # à ignorer les rares, ce que le taux global ne sanctionne pas mais que le F1
-    # moyen par classe voit tout de suite.
-    #
-    # L'exposant a été balayé : -0,5 (racine) corrige trop et coûte 0,012 de taux,
-    # 0 (aucune pondération) laisse 0,005 de F1 sur la table. -0,25 est le seul
-    # réglage qui passe devant le linéaire sur les deux mesures à la fois.
-    effectifs = torch.bincount(etiquettes_apprentissage).float()
+    print(f"\n  Essai 3 — le réseau PyTorch, sur {len(graines)} initialisations")
+    effectifs = torch.bincount(entrees["cibles_apprentissage"]).float()
     poids = effectifs ** -0.25
     poids = poids / poids.mean()
-    print(f"    pondération des classes : de {poids.min():.2f} ({dossier.classes[int(poids.argmin())]})"
-          f" à {poids.max():.2f} ({dossier.classes[int(poids.argmax())]})")
 
-    with Chrono("réseau PyTorch") as chrono:
-        historique = entrainement.entrainer(
-            modele, lots_apprentissage, lots_validation,
-            iterations=iterations, pas=3e-3, releve_tous_les=1,
-            garder_le_meilleur=True,
-            perte=torch.nn.CrossEntropyLoss(weight=poids),
-        )
-    predits, vrais = entrainement.predire(
-        modele, jeu.lots(*parties["test"], taille=256, melanger=False)
-    )
-    mesures.montrer("réseau", predits, vrais, dossier.classes,
-                    etiquettes_apprentissage.tolist())
+    resultats, historique_montre = [], None
+    for graine in graines:
+        predits, _, historique, secondes = essai_du_reseau(
+            dossier, entrees, poids, graine, iterations, taille_lot, pas)
+        resultats.append({
+            "taux": mesures.taux_de_reussite(predits, vrais),
+            "f1": mesures.f1_moyen(predits, vrais, dossier.classes),
+            "secondes": secondes,
+            "predits": predits,
+        })
+        print(f"    initialisation {graine} : taux {resultats[-1]['taux']:.4f}"
+              f"   F1 {resultats[-1]['f1']:.4f}   ({secondes:.1f} s)")
+        historique_montre = historique_montre or historique
+
+    def moyenne(clef):
+        return sum(r[clef] for r in resultats) / len(resultats)
+
+    def etendue(clef):
+        return max(r[clef] for r in resultats) - min(r[clef] for r in resultats)
 
     figures.courbes_de_perte(
         {
-            "apprentissage": (historique["passage"], historique["perte"]),
-            "validation": (historique["passage"], historique["perte_validation"]),
+            "apprentissage": (historique_montre["passage"], historique_montre["perte"]),
+            "validation": (historique_montre["passage"],
+                           historique_montre["perte_validation"]),
         },
         "phase03_reseau.png",
         "Phase 3 — réseau PyTorch : perte d'apprentissage et de validation",
@@ -276,30 +298,52 @@ def phase03(dossier, iterations=12):
     )
 
     print(f"\n  {'essai':<34}{'taux':>8}{'F1 moyen':>11}{'temps':>9}")
-    lignes = [
-        ("toujours la plus fréquente", torch.full_like(vrais, majoritaire), 0.0),
-        ("linéaire sur comptages de mots", predits_lineaire, temps_lineaire),
-        ("réseau PyTorch", predits, chrono.secondes),
-    ]
-    for intitule, prediction, secondes in lignes:
-        print(f"  {intitule:<34}"
-              f"{mesures.taux_de_reussite(prediction, vrais):>8.3f}"
-              f"{mesures.f1_moyen(prediction, vrais, dossier.classes):>11.3f}"
-              f"{secondes:>8.1f}s")
+    for intitule, taux, f1, secondes in (
+        ("toujours la plus fréquente",
+         mesures.taux_de_reussite(predits_baseline, vrais),
+         mesures.f1_moyen(predits_baseline, vrais, dossier.classes), 0.0),
+        ("linéaire sur comptages",
+         mesures.taux_de_reussite(predits_lineaire, vrais),
+         mesures.f1_moyen(predits_lineaire, vrais, dossier.classes), temps_lineaire),
+        (f"réseau PyTorch (moyenne de {len(graines)})",
+         moyenne("taux"), moyenne("f1"), moyenne("secondes")),
+    ):
+        print(f"  {intitule:<34}{taux:>8.4f}{f1:>11.4f}{secondes:>8.1f}s")
+    print(f"  {'étendue du réseau':<34}{etendue('taux'):>8.4f}{etendue('f1'):>11.4f}")
+
+    taux_lineaire = mesures.taux_de_reussite(predits_lineaire, vrais)
+    f1_lineaire = mesures.f1_moyen(predits_lineaire, vrais, dossier.classes)
+    # Le critère n'est pas « la moyenne dépasse-t-elle ? » : une moyenne se laisse
+    # tirer par une initialisation chanceuse — c'est l'erreur que j'ai faite une
+    # première fois. C'est le PIRE des essais qui doit passer devant, sur les deux
+    # mesures à la fois. Là seulement l'écart se défend devant le Conseil.
+    pire_taux = min(r["taux"] for r in resultats)
+    pire_f1 = min(r["f1"] for r in resultats)
+    solide = pire_taux > taux_lineaire and pire_f1 > f1_lineaire
+    print(f"\n  gain moyen sur le linéaire : "
+          f"{moyenne('taux') - taux_lineaire:+.4f} en taux, "
+          f"{moyenne('f1') - f1_lineaire:+.4f} en F1")
+    print(f"  pire essai du réseau       : {pire_taux:.4f} / {pire_f1:.4f}"
+          f"   contre {taux_lineaire:.4f} / {f1_lineaire:.4f} pour le linéaire")
+    print("  " + (f"✓ les {len(graines)} essais passent devant sur les deux mesures"
+                  if solide
+                  else "✗ un essai au moins repasse derrière : l'écart ne se défend pas"))
 
     return dossier.retenir(
         3,
         classes=len(dossier.classes),
         releves=len(dossier.textes),
-        taux_baseline=mesures.taux_de_reussite(
-            torch.full_like(vrais, majoritaire), vrais),
+        jetons=len(dossier.vocabulaire),
         taux_lineaire=mesures.taux_de_reussite(predits_lineaire, vrais),
-        taux_reseau=mesures.taux_de_reussite(predits, vrais),
         f1_lineaire=mesures.f1_moyen(predits_lineaire, vrais, dossier.classes),
-        f1_reseau=mesures.f1_moyen(predits, vrais, dossier.classes),
+        taux_reseau=moyenne("taux"),
+        f1_reseau=moyenne("f1"),
+        etendue_taux=etendue("taux"),
+        etendue_f1=etendue("f1"),
         temps_lineaire=temps_lineaire,
-        temps_reseau=chrono.secondes,
+        temps_reseau=moyenne("secondes"),
     )
+
 
 
 def phase04(dossier):

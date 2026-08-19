@@ -24,10 +24,15 @@ class SacDeMots(nn.Module):
     """
 
     def __init__(self, taille_vocabulaire, nombre_classes, dimension=64, cachee=128,
-                 oubli=0.0, avec_maximum=True):
+                 oubli=0.0, avec_maximum=True, resume="moyenne"):
         super().__init__()
         self.vecteurs = nn.Embedding(taille_vocabulaire, dimension, padding_idx=0)
         self.avec_maximum = avec_maximum
+        # « moyenne » efface le nombre de fois qu'un mot apparaît et la longueur du
+        # relevé — or c'est précisément l'information sur laquelle le linéaire du
+        # service statistique travaille. « somme » la rend au réseau, « racine »
+        # la rend en limitant l'avantage des relevés longs.
+        self.resume = resume
         self.tete = nn.Sequential(
             nn.Dropout(oubli),
             nn.Linear(dimension * (2 if avec_maximum else 1), cachee),
@@ -39,10 +44,15 @@ class SacDeMots(nn.Module):
     def forward(self, jetons):
         vecteurs = self.vecteurs(jetons)
         presents = (jetons != 0).unsqueeze(-1)
-        # Moyenne sur les mots réellement présents : le remplissage ne doit pas
-        # diluer les relevés courts (la moitié font 13 mots ou moins).
         compte = presents.sum(dim=1).clamp(min=1)
-        resume = (vecteurs * presents).sum(dim=1) / compte
+        somme = (vecteurs * presents).sum(dim=1)
+        # La somme des vecteurs de mots EST le sac de mots projeté : elle garde le
+        # nombre d'occurrences et la longueur du relevé. La moyenne les efface.
+        resume = {
+            "somme": somme,
+            "moyenne": somme / compte,
+            "racine": somme / compte.sqrt(),
+        }[self.resume]
         if self.avec_maximum:
             # Le remplissage est mis hors jeu avant le maximum, sinon un relevé
             # court verrait ses zéros de remplissage gagner le maximum.
@@ -53,6 +63,62 @@ class SacDeMots(nn.Module):
             maximum = masque.max(dim=1).values.nan_to_num(neginf=0.0)
             resume = torch.cat([resume, maximum], dim=-1)
         return self.tete(resume)
+
+
+class Empilement(nn.Module):
+    """Le montage qui a un avantage que le comptage ne peut pas avoir : l'ordre.
+
+    Un sac de mots plafonne, et le linéaire du service statistique y est déjà : à
+    information égale, il est optimal. La seule information qu'il n'a pas est la
+    suite des mots — « lumière derrière la colline » et « colline derrière la
+    lumière » sont le même sac.
+
+    Chaque couche fait glisser une fenêtre sur le relevé et combine les positions
+    voisines. Les poids sont partagés entre toutes les positions, donc le montage
+    apprend une tournure (« bright light », « shaped object ») au lieu de retenir un
+    relevé — c'est ce qui manquait à la voie large, qui utilisait les paires rares
+    comme empreintes.
+
+    Toutes les positions sont traitées de front, jamais l'une après l'autre : la
+    contrainte de la phase 6 est déjà respectée ici. Chaque couche ajoute
+    `fenetre - 1` à l'étendue vue par une sortie, ce que la phase 6 devra tabuler.
+    """
+
+    def __init__(self, taille_vocabulaire, nombre_classes, dimension=64,
+                 canaux=128, fenetre=3, couches=1, oubli=0.3):
+        super().__init__()
+        self.vecteurs = nn.Embedding(taille_vocabulaire, dimension, padding_idx=0)
+        self.fenetre, self.couches_demandees = fenetre, couches
+        entrees = dimension
+        self.convolutions = nn.ModuleList()
+        for _ in range(couches):
+            self.convolutions.append(
+                nn.Conv1d(entrees, canaux, kernel_size=fenetre, padding=fenetre // 2)
+            )
+            entrees = canaux
+        self.oubli = nn.Dropout(oubli)
+        self.tete = nn.Linear(canaux, nombre_classes)
+
+    def etendue_par_couche(self):
+        """Ce que chaque couche ajoute à l'étendue vue, et le cumul. Phase 6."""
+        etendue, lignes = 1, []
+        for numero in range(1, self.couches_demandees + 1):
+            ajout = self.fenetre - 1
+            etendue += ajout
+            lignes.append({"couche": numero, "ajout": ajout, "cumul": etendue})
+        return lignes
+
+    def forward(self, jetons):
+        presents = (jetons != 0).unsqueeze(1)
+        sortie = self.vecteurs(jetons).transpose(1, 2)  # (relevés, canaux, positions)
+        for convolution in self.convolutions:
+            sortie = torch.relu(convolution(sortie))
+        # Le remplissage est mis hors jeu avant le maximum sur les positions, sinon
+        # les positions vides voteraient. Le maximum plutôt que la moyenne : une
+        # tournure décisive peut n'apparaître qu'une fois dans le relevé.
+        sortie = sortie.masked_fill(~presents[:, :, : sortie.shape[-1]], float("-inf"))
+        resume = sortie.max(dim=-1).values.nan_to_num(neginf=0.0)
+        return self.tete(self.oubli(resume))
 
 
 # --- Acte 3 : à écrire à la main ------------------------------------------
