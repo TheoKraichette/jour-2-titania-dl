@@ -233,7 +233,8 @@ def phase03(dossier, iterations=12):
     mesures.montrer("linéaire", predits_lineaire, vrais_lineaire, dossier.classes)
 
     print("\n  Essai 3 — le réseau PyTorch")
-    modele = modeles.SacDeMots(len(dossier.vocabulaire), len(dossier.classes))
+    modele = modeles.SacDeMots(len(dossier.vocabulaire), len(dossier.classes),
+                               oubli=0.3)
     lots_apprentissage = jeu.lots(*parties["apprentissage"], taille=64,
                                   graine=dossier.graine)
     lots_validation = jeu.lots(*parties["validation"], taille=256, melanger=False)

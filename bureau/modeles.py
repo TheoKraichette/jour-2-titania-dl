@@ -18,12 +18,15 @@ class SacDeMots(nn.Module):
     l'acte 3, où le Conseil demandera si « elle » sait qu'il s'agit de « la lumière ».
     """
 
-    def __init__(self, taille_vocabulaire, nombre_classes, dimension=64, cachee=128):
+    def __init__(self, taille_vocabulaire, nombre_classes, dimension=64, cachee=128,
+                 oubli=0.0):
         super().__init__()
         self.vecteurs = nn.Embedding(taille_vocabulaire, dimension, padding_idx=0)
         self.tete = nn.Sequential(
+            nn.Dropout(oubli),
             nn.Linear(dimension, cachee),
             nn.ReLU(),
+            nn.Dropout(oubli),
             nn.Linear(cachee, nombre_classes),
         )
 
