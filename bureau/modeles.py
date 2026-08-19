@@ -139,6 +139,25 @@ class UneTete(nn.Module):
         return poids @ contenus, poids
 
 
+class DeuxTetes(nn.Module):
+    """Phase 13 : le même calcul, deux fois en parallèle.
+
+    Chaque tête a ses propres façons de poser la question, d'afficher l'étiquette
+    et de livrer le contenu. Personne ne dit à la deuxième quoi surveiller : elles
+    diffèrent parce qu'elles ont démarré différemment. À la fin, les deux sorties
+    sont recollées et repassées dans une couche.
+    """
+
+    def __init__(self, dimension):
+        super().__init__()
+        self.tetes = nn.ModuleList([UneTete(dimension), UneTete(dimension)])
+        self.recolle = nn.Linear(2 * dimension, dimension, bias=False)
+
+    def forward(self, vecteurs):
+        sorties, poids = zip(*(tete(vecteurs) for tete in self.tetes))
+        return self.recolle(torch.cat(sorties, dim=-1)), poids
+
+
 def geler(module, sauf=()):
     """Acte 4, premier régime : le cerveau emprunté ne bouge pas d'une valeur.
 

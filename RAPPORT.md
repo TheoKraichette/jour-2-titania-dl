@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 9.
+> Phases traitées : 0 à 13.
 
 ---
 
@@ -857,8 +857,33 @@ transmissions complètes, non tronquées à 135 caractères, la consommeraient v
 
 ### Phase 13 — deux regards sur le même relevé
 
-Mesure du désaccord entre les deux têtes : **à choisir et justifier en une ligne**.
-Point de comparaison obligatoire : deux têtes qui partiraient identiques.
+Deux têtes en parallèle sur le relevé de la phase 10, chacune avec ses propres
+vecteurs de question, d'étiquette et de contenu, leurs sorties recollées et
+repassées dans une couche — la sortie reste de la forme (1, 13, 32), une seule.
+
+Les deux matrices, mots en étiquettes : `figures/phase13_tete1.png` et
+`phase13_tete2.png` — le même relevé, deux histoires.
+
+La mesure du désaccord, justifiée en une ligne : **la moyenne des écarts absolus
+case à case**, parce qu'elle se lit dans la même unité que les poids — des parts
+de mélange — et vaut zéro si et seulement si les deux têtes répartissent leur
+regard exactement pareil.
+
+| | Désaccord |
+|---|---|
+| les deux têtes | **0,0301** |
+| cas de contrôle : deux têtes partant identiques | **0,0000000** |
+
+Sans le contrôle, 0,03 ne voudrait rien dire ; à côté d'un zéro exact, il dit que
+les deux têtes regardent réellement des choses différentes — dès l'initialisation,
+personne ne leur ayant rien assigné.
+
+Les têtes ne sont pas entraînées : leurs différences viennent de leur
+initialisation, rien d'autre. Si elles l'étaient, on pourrait conclure davantage :
+un désaccord qui persiste après entraînement dirait qu'elles se sont réparti le
+travail — une piste par tête, qui fait quoi, quelle couleur va avec quel objet,
+quel mot reprend lequel — et un désaccord qui s'effondre dirait qu'une seule tête
+suffisait à la tâche.
 
 ---
 

@@ -269,18 +269,55 @@ def phase12(dossier, longueurs=(32, 64, 128, 256, 512), repetitions=50):
 
 
 def phase13(dossier):
-    """Deux regards sur le même relevé."""
+    """Deux regards sur le même relevé.
+
+    Deux têtes en parallèle, chacune avec ses propres vecteurs de question,
+    d'étiquette et de contenu, recollées en une seule sortie. La démonstration
+    qu'elles ne regardent pas la même chose n'est pas une affirmation : ce sont
+    les deux matrices, et un chiffre de désaccord comparé à son cas de contrôle.
+    """
     titre(13, "deux regards sur le même relevé")
-    a_faire(
-        """
-        Deux têtes en parallèle sur le même relevé, chacune avec ses propres vecteurs de
-        question, d'étiquette et de contenu, recollées en une seule sortie.
-        Démontrer qu'elles ne regardent pas la même chose : les deux matrices affichées
-        côte à côte avec les mots en étiquettes, plus une mesure du désaccord, justifiée
-        en une ligne.
-        Le point de comparaison obligatoire : deux têtes qui partiraient identiques.
-        Sans lui, le chiffre de désaccord ne veut rien dire.
-        Écrire que les têtes ne sont pas entraînées, donc que les différences viennent de
-        l'initialisation — et ce qu'on pourrait conclure de plus si elles l'étaient.
-        """
-    )
+    attention = la_tete_de_la_phase10(dossier)
+    mots, entree = attention["mots"], attention["entree"]
+    vecteurs = entree + encodage_de_position(len(mots), DIMENSION)
+
+    entrainement.fixer_graine(dossier.graine)
+    deux = modeles.DeuxTetes(DIMENSION)
+    with torch.no_grad():
+        sortie, (poids_1, poids_2) = deux(vecteurs)
+    poids_1, poids_2 = poids_1.squeeze(0), poids_2.squeeze(0)
+
+    # La mesure du désaccord : la moyenne des écarts absolus case à case. Elle se
+    # lit dans la même unité que les poids — des parts de mélange — et vaut zéro
+    # si et seulement si les deux têtes répartissent leur regard exactement pareil.
+    desaccord = (poids_1 - poids_2).abs().mean().item()
+    print(f"  sortie recollée : {tuple(sortie.shape)} — une seule, "
+          f"comme demandé")
+    print(f"  désaccord entre les deux têtes : {desaccord:.4f} "
+          f"(moyenne des écarts absolus case à case)")
+
+    # Le cas de contrôle, fabriqué : deux têtes qui partiraient identiques.
+    controle = modeles.DeuxTetes(DIMENSION)
+    controle.tetes[1].load_state_dict(controle.tetes[0].state_dict())
+    with torch.no_grad():
+        _, (poids_a, poids_b) = controle(vecteurs)
+    desaccord_controle = (poids_a - poids_b).abs().mean().item()
+    print(f"  cas de contrôle (têtes identiques) : {desaccord_controle:.7f} — "
+          f"sans ce point de\n  comparaison, le chiffre du dessus ne voudrait "
+          f"rien dire.")
+
+    figures.matrice_d_attention(
+        poids_1.numpy(), mots, mots, "phase13_tete1.png",
+        "Phase 13 — tête 1 : qui regarde qui")
+    figures.matrice_d_attention(
+        poids_2.numpy(), mots, mots, "phase13_tete2.png",
+        "Phase 13 — tête 2 : le même relevé, une autre histoire")
+
+    print("\n  Les têtes ne sont pas entraînées : leurs différences viennent de "
+          "leur initialisation,\n  rien d'autre. Si elles l'étaient, un désaccord "
+          "qui persiste dirait qu'elles se sont\n  réparti le travail — une piste "
+          "par tête — et un désaccord qui s'effondre dirait\n  qu'une seule "
+          "suffisait.")
+
+    return dossier.retenir(13, desaccord=desaccord,
+                           desaccord_controle=desaccord_controle)
