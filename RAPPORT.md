@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 4.
+> Phases traitées : 0 à 5.
 
 ---
 
@@ -440,10 +440,50 @@ panne 1. Oui et elles restent ensemble → panne 2.
 
 ### Phase 5 — le budget de calcul
 
-**À rendre :** le temps de la phase 3, le nouveau, le facteur entre les deux ; la
-figure avec le temps écoulé en abscisse ; les réglages touchés un par un, chacun
-avec son gain et son coût en score ; pourquoi aller trop vite finit par coûter
-plus cher.
+La référence n'est pas le temps noté en phase 3 : c'est la configuration exacte de
+la phase 3, **rejouée dans le même processus** que les essais accélérés, pour que
+les deux temps sortent du même chronomètre sur la même machine au même moment.
+D'un lancement à l'autre, la même configuration varie de ±10 % selon la charge du
+PC — comparer des temps pris à des moments différents n'aurait rien prouvé.
+
+| | Temps | Taux | F1 moyen |
+|---|---|---|---|
+| référence — phase 3 (25 passages, lots de 256) | 126,4 s | 0,5421 | 0,5083 |
+| réglage 1 — 8 passages au lieu de 25 | **40,0 s** | 0,5421 | 0,5083 |
+| réglage 2 — et des lots de 512 | 50,1 s | 0,5421 | 0,5041 |
+
+**Temps de la phase 3 : 126,4 s. Temps de la phase 5 : 40,0 s. Facteur : ×3,2.**
+Figure, avec le temps écoulé en abscisse et les deux courbes de validation
+superposées : `figures/phase05_budget.png`.
+
+**Réglage 1 — s'arrêter à 8 passages. Gain ×3,2, coût en score : rigoureusement
+zéro.** Le score n'est pas « équivalent », il est identique à la décimale près, et
+ce n'est pas une coïncidence : la phase 3 avait montré que le meilleur point de
+validation tombe au passage 5, et l'état rendu est celui de ce meilleur point. Les
+17 passages économisés ne servaient qu'à surapprendre — on payait de l'électricité
+pour dégrader le modèle, puis on jetait le résultat de cette dégradation.
+
+**Réglage 2 — des lots de 512 au lieu de 256. Gain : aucun (50,1 s, plus lent que
+le réglage 1 seul), coût : 0,004 de F1. Rendu, mais pas retenu.** L'hypothèse était
+que la moitié des tours de boucle Python ferait gagner du temps ; la mesure dit que
+non. À lots de 256, la boucle ne coûte déjà presque rien : le temps est dans la
+convolution des 51 034 relevés, qui ne dépend pas du découpage en lots. C'est le
+réglage qui ne rapporte rien, et il est au rapport parce qu'un réglage sans mesure
+ne compte pas — celui-ci a sa mesure, et elle dit de ne pas le garder.
+
+**Le score final n'est pas inférieur à celui de la phase 3.** Vérifié comme en
+phase 3, sur les trois mêmes initialisations : 0,5421 / 0,5385 / 0,5412 de taux —
+les mêmes valeurs qu'en phase 3, puisque l'état retenu par initialisation est le
+même. Le pire essai (0,5385 / 0,4975) égale exactement le plancher de la phase 3.
+
+**Pourquoi aller trop vite finit par coûter plus cher.** Je l'ai payé pour le
+mesurer, en phase 3. Le pas d'apprentissage à 1e-2 — cinq fois plus « rapide » en
+apparence — donnait un meilleur point de validation au passage 2 et une dispersion
+de 0,020 entre initialisations : impossible de savoir ce qu'on avait sans relancer
+plusieurs fois. Un entraînement deux fois plus court qu'il faut relancer quatre
+fois pour s'y fier coûte deux fois plus cher que l'entraînement lent lancé une
+fois. La vitesse qui se paie en incertitude n'est pas de la vitesse, c'est un
+report de la facture.
 
 ### Phase 6 — le champ de vision du modèle
 
