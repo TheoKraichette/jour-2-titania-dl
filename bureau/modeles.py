@@ -158,6 +158,25 @@ class DeuxTetes(nn.Module):
         return self.recolle(torch.cat(sorties, dim=-1)), poids
 
 
+class TableHuitBits(nn.Module):
+    """Phase 16 : la table de mots représentée plus grossièrement, à la main.
+
+    Les valeurs deviennent des entiers de 8 bits, avec une échelle par ligne pour
+    revenir aux flottants au moment de la lecture. Quatre fois moins de place,
+    aucune valeur réentraînée.
+    """
+
+    def __init__(self, table):
+        super().__init__()
+        valeurs = table.weight.detach()
+        echelle = valeurs.abs().amax(dim=1, keepdim=True).clamp(min=1e-8) / 127
+        self.register_buffer("entiers", (valeurs / echelle).round().to(torch.int8))
+        self.register_buffer("echelle", echelle)
+
+    def forward(self, indices):
+        return self.entiers[indices].float() * self.echelle[indices]
+
+
 class AjoutBasRang(nn.Module):
     """Acte 4, troisième régime : de très petites quantités de valeurs ajoutées
     à côté de celles du modèle emprunté, qui reste intact.

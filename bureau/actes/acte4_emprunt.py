@@ -470,18 +470,56 @@ def phase16(dossier):
     print(f"  {'avant':<24}{poids_avant:>12.1f} Mo{latence_avant:>13.1f} ms"
           f"{debit_avant:>12.0f}{taux_avant:>8.4f}{f1_avant:>8.4f}")
 
-    # --- Direction 1 : représenter les valeurs plus grossièrement, sans
-    # réentraîner — les couches linéaires passent en entiers de 8 bits.
+    # --- Réduction 1 : représenter les valeurs plus grossièrement, sans
+    # réentraîner. Une première tentative ne quantifiait que les couches
+    # linéaires : ÷1,1 de poids seulement — le poids de bert-tiny est dans sa
+    # table de mots, 3,9 millions de valeurs sur 4,4. La table passe donc en
+    # 8 bits elle aussi, à la main (modeles.TableHuitBits) : les entiers et une
+    # échelle par ligne, rien d'autre.
     reduit = torch.ao.quantization.quantize_dynamic(
         modele, {nn.Linear}, dtype=torch.qint8)
+    reduit.emprunte.embeddings.word_embeddings = modeles.TableHuitBits(
+        modele.emprunte.embeddings.word_embeddings)
     taux_apres, f1_apres = score_de(reduit)
     poids_apres, latence_apres, debit_apres = mesurer_le_systeme(reduit, parties)
     print(f"  {'quantifié 8 bits':<24}{poids_apres:>12.1f} Mo"
           f"{latence_apres:>13.1f} ms{debit_apres:>12.0f}"
           f"{taux_apres:>8.4f}{f1_apres:>8.4f}")
 
-    # --- Direction 2 : un format qui se charge et s'exécute seul, sans
-    # l'attirail d'entraînement ni le code du projet.
+    # --- Réduction 2 : ne plus remplir chaque témoignage à 48 jetons fixes.
+    # La médiane en fait 16 : les deux tiers du calcul portaient sur du
+    # remplissage — que le masque neutralise dans le résultat (les sorties sont
+    # identiques, le score est le même), mais pas dans le temps de calcul.
+    from transformers import AutoTokenizer
+
+    decoupeur = AutoTokenizer.from_pretrained(EMPRUNTE)
+    interdits = jeu.mots_interdits(dossier.classes)
+    texte_seul = jeu.censurer(dossier.textes[dossier.decoupe["test"][0]], interdits)
+    lot_textes = [jeu.censurer(dossier.textes[i], interdits)
+                  for i in dossier.decoupe["test"][:256]]
+    seul = decoupeur(texte_seul, truncation=True, max_length=LONGUEUR,
+                     return_tensors="pt")
+    lot = decoupeur(lot_textes, truncation=True, max_length=LONGUEUR,
+                    padding=True, return_tensors="pt")
+    with torch.no_grad():
+        for _ in range(10):
+            reduit(seul["input_ids"], seul["attention_mask"])
+        temps = sorted(
+            [(lambda d: (reduit(seul["input_ids"], seul["attention_mask"]),
+                         time.perf_counter() - d)[1])(time.perf_counter())
+             for _ in range(200)])
+        latence_courte = temps[100] * 1000
+        depart = time.perf_counter()
+        for _ in range(5):
+            reduit(lot["input_ids"], lot["attention_mask"])
+        debit_court = 5 * 256 / (time.perf_counter() - depart)
+    print(f"  {'+ remplissage à la demande':<24}{poids_apres:>12.1f} Mo"
+          f"{latence_courte:>13.1f} ms{debit_court:>12.0f}"
+          f"{taux_apres:>8.4f}{f1_apres:>8.4f}")
+    latence_apres, debit_apres = latence_courte, debit_court
+
+    # --- Et le format autonome : se charge et s'exécute seul, sans le code du
+    # projet ni l'attirail d'entraînement.
     exemple = (parties["test"]["entrees"][:1], parties["test"]["masque"][:1])
     with torch.no_grad():
         autonome = torch.jit.trace(reduit, exemple, strict=False)

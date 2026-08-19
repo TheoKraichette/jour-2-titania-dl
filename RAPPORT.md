@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 15.
+> Phases traitées : 0 à 16.
 
 ---
 
@@ -998,10 +998,49 @@ incapable d'inventer.
 **La marge, annoncée avant toute optimisation.** Le système livré est le
 classifieur de l'acte 4 — le cerveau emprunté et sa tête, régime gelé de la
 phase 14. J'accepte de perdre au plus **0,01 de taux et 0,01 de F1** entre le
-système d'avant et le système réduit. Cette phrase est écrite et commitée avant
-que la moindre réduction ait été lancée ou mesurée, et elle ne se réécrira pas.
+système d'avant et le système réduit. Cette phrase a été écrite et commitée
+avant que la moindre réduction ait été lancée ou mesurée (voir l'historique).
 
-*(les mesures avant/après suivront dans un commit ultérieur)*
+#### Les mesures, même machine, même protocole
+
+| | Poids disque | Réponse unique | Réponses/s | Taux | F1 |
+|---|---|---|---|---|---|
+| avant | 17,6 Mo | 2,0 ms | 1 851 | 0,2742 | 0,0650 |
+| quantifié 8 bits | 4,8 Mo | 1,7 ms | 2 068 | 0,2728 | 0,0642 |
+| + remplissage à la demande | 4,8 Mo | **0,9 ms** | **2 911** | 0,2728 | 0,0642 |
+| + format autonome | **4,8 Mo** | *(se charge et s'exécute seul)* | | | |
+
+**Facteurs : poids ÷3,7, réponse unique ×2,3, débit ×1,6.** Écart de score :
++0,0014 de taux, +0,0008 de F1 — le bruit de quantification aide même très
+légèrement. **Dans la marge annoncée.**
+
+#### Ce que chaque réduction a demandé de comprendre
+
+**Une première tentative a raté, et elle est au dossier** : quantifier les seules
+couches linéaires donnait ÷1,1 de poids et un système *plus lent* (le
+dé-quantifieur ajoute un coût par passage à des couches minuscules). La cause :
+le poids de bert-tiny n'est pas dans ses couches, il est dans sa **table de
+mots** — 3,9 millions de valeurs sur 4,4. La table passe donc en 8 bits elle
+aussi, à la main : les entiers et une échelle par ligne, rien d'autre, aucune
+valeur réentraînée.
+
+**La vitesse était ailleurs** : le système remplissait chaque témoignage à 48
+jetons fixes quand la médiane en fait 16 — les deux tiers du calcul portaient
+sur du remplissage, que le masque neutralise dans le résultat (les sorties sont
+identiques, le score ne bouge pas) mais pas dans le temps. Remplir à la demande
+donne le ×2,3.
+
+**Le piège annoncé par le Conseil, mesuré** : la réponse unique gagne ×2,3, le
+débit seulement ×1,6 — ils ne varient pas ensemble. En traitement par lots, le
+remplissage se fait à la taille du plus long témoignage du lot, et la
+dé-quantification garde son coût fixe : améliorer l'un ne dit rien de l'autre,
+d'où les deux mesures affichées.
+
+**Pourquoi s'arrêter là** : la troisième direction — faire apprendre à un modèle
+plus petit à reproduire les sorties du gros, hésitations comprises — coûte des
+heures d'entraînement pour un cerveau qui ne pèse déjà que 4,8 Mo ; le gain
+suivant est réel, mais la facture d'électricité pour l'obtenir dépasse ce que le
+vaisseau y gagnerait.
 
 ### Phase 17 — le faux témoignage
 
