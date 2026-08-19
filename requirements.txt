@@ -1,0 +1,15 @@
+# torch est installé depuis l'index CPU-only dans le Dockerfile : la roue par
+# défaut de PyPI embarque les paquets CUDA (~3 Go) inutiles sans carte graphique.
+torch>=2.4
+
+polars>=1.0
+numpy>=1.26
+matplotlib>=3.8
+
+# Le « service statistique » de la phase 3 : linéaire sur comptages de mots.
+scikit-learn>=1.5
+
+# Acte 4 — à décommenter en arrivant à la phase 14 (cerveau emprunté).
+# transformers>=4.44
+# tokenizers>=0.19
+# peft>=0.12

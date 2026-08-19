@@ -1,0 +1,21 @@
+services:
+  # Exécution courante : le CSV, les figures et les artefacts restent sur l'hôte.
+  bureau:
+    build: .
+    volumes:
+      - .:/app
+      - caches:/caches
+    environment:
+      # Cache des modèles empruntés (acte 4) : hors du dépôt, hors de l'image.
+      HF_HOME: /caches/huggingface
+
+  # Conteneur vierge, sans montage : vérifie que tout se refait seul.
+  machine-neuve:
+    build: .
+    volumes:
+      - caches:/caches
+    environment:
+      HF_HOME: /caches/huggingface
+
+volumes:
+  caches:

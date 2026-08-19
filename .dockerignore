@@ -1,0 +1,10 @@
+.git/
+.gitignore
+*.csv
+*.pdf
+figures/
+artefacts/
+caches/
+__pycache__/
+.venv/
+RAPPORT.md
