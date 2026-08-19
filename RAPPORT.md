@@ -760,11 +760,37 @@ du disparu.
 
 ### Phase 10 — chaque mot interroge les autres
 
-Relevé retenu (un vrai, avec un pronom ou une reprise) : **à choisir**.
+Le relevé retenu — un vrai, le n° 193 du jeu, choisi parce qu'il contient deux
+reprises :
 
-**À rendre :** la matrice des poids avec les mots en étiquettes ; chaque ligne
-somme à 1 ; la sortie a la même forme que l'entrée ; la case qui dit sur quel mot
-s'est appuyé le pronom.
+> « It had rows of white lights with red lights pulsating in between them »
+
+« them » (position 13) renvoie à « lights » (position 6), et « it » en tête
+renvoie à l'objet lui-même. Treize jetons, avec le découpage du projet.
+
+La tête est codée à la main dans `bureau/modeles.py` (`UneTete`) : trois couches
+linéaires fabriquent la question, l'étiquette et le contenu de chaque mot, puis
+
+```
+scores = questions @ etiquettes.T / dimension ** 0.5
+poids  = softmax(scores)
+sortie = poids @ contenus
+```
+
+La matrice « qui regarde qui », mots en étiquettes de lignes et de colonnes :
+`figures/phase10_qui_regarde_qui.png`.
+
+Les trois validations :
+
+- **chaque ligne somme à un** : écart maximal 1,2 × 10⁻⁷ (l'arithmétique
+  flottante, rien d'autre) ;
+- **la sortie a la même forme que l'entrée** : (1, 13, 32) des deux côtés —
+  chaque mot ressort réécrit, ni plus ni moins nombreux ;
+- **la case du pronom** : ligne « them », colonne « lights » — elle vaut 0,0701.
+  La tête n'est pas entraînée : cette valeur ne signifie rien (la ligne entière
+  est quasi uniforme, de 0,054 à 0,131), et c'est précisément le constat attendu.
+  Ce qu'on sait désigner, c'est **où** la coréférence devra s'écrire le jour où le
+  mécanisme sera entraîné : à cette case-là.
 
 ### Phase 11 — le Conseil mélange vos mots
 

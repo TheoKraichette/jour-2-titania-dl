@@ -103,26 +103,40 @@ class Empilement(nn.Module):
         return self.tete(self.oubli(resume))
 
 
-# --- Acte 3 : à écrire à la main ------------------------------------------
-#
-# class UneTete(nn.Module):
-#     """Phase 10. Trois vecteurs par mot : question, étiquette, contenu.
-#
-#         scores = questions @ etiquettes.transpose(-2, -1) / dimension ** 0.5
-#         poids  = torch.softmax(scores, dim=-1)
-#         sortie = poids @ contenus
-#
-#     La division par la racine de la dimension ne se saute pas.
-#     Rendre aussi les poids : c'est la matrice « qui regarde qui » du rapport.
-#     """
-#
-# class Positions(nn.Module):
-#     """Phase 11. L'ordre n'est nulle part dans le calcul ci-dessus : on l'ajoute
-#     aux vecteurs d'entrée, avant l'attention, jamais après."""
-#
-# class PlusieursTetes(nn.Module):
-#     """Phase 13. Le même calcul en parallèle, avec des jeux de vecteurs
-#     différents, puis on recolle et on repasse dans une couche."""
+# --- Acte 3 : le mécanisme du tableau, écrit à la main ----------------------
+# Rien que des tenseurs et des opérations de base : produits matriciels, softmax,
+# couches linéaires. Aucun bloc tout prêt, rien qui porte déjà le mot
+# « attention » dans son nom, aucun modèle préentraîné.
+
+
+class UneTete(nn.Module):
+    """Phase 10 : chaque mot interroge les autres.
+
+    Chaque mot fabrique trois vecteurs à partir de lui-même — la question (ce
+    qu'il cherche dans la phrase), l'étiquette (ce qu'il annonce aux autres, sa
+    vitrine), le contenu (ce qu'il donne réellement quand on l'a choisi). On
+    compare la question de chacun à l'étiquette de tous, les scores deviennent
+    des proportions qui somment à un, et chaque mot se réécrit comme le mélange
+    des contenus, pesé par ces proportions.
+    """
+
+    def __init__(self, dimension):
+        super().__init__()
+        self.dimension = dimension
+        self.question = nn.Linear(dimension, dimension, bias=False)
+        self.etiquette = nn.Linear(dimension, dimension, bias=False)
+        self.contenu = nn.Linear(dimension, dimension, bias=False)
+
+    def forward(self, vecteurs):
+        questions = self.question(vecteurs)
+        etiquettes = self.etiquette(vecteurs)
+        contenus = self.contenu(vecteurs)
+        # La division par la racine de la dimension ne se saute pas : sans elle,
+        # les scores partent trop loin, le softmax devient du tout ou rien et
+        # plus rien n'apprend.
+        scores = questions @ etiquettes.transpose(-2, -1) / self.dimension ** 0.5
+        poids = torch.softmax(scores, dim=-1)
+        return poids @ contenus, poids
 
 
 def geler(module, sauf=()):
