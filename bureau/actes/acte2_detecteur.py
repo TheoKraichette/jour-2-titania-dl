@@ -3,10 +3,12 @@
 Une tâche unique pour tout l'acte : `comments` entre, une forme sort.
 """
 
+import polars as pl
 import torch
 
 from bureau import entrainement, figures, jeu, mesures, modeles
 from bureau.contexte import a_faire, titre
+from bureau.entrainement import Chrono
 
 
 def preparer_le_jeu(dossier):
@@ -121,23 +123,166 @@ def phase02(dossier):
                            perte_finale=historique[-1])
 
 
-def phase03(dossier):
-    """Battre le service statistique."""
-    titre(3, "battre le service statistique")
-    a_faire(
-        """
-        Trois décisions écrites et défendues : les 2 922 relevés sans forme, les deux
-          fourre-tout (unknown, other), les doublons de sens (round/circle, changed/changing).
-        Deux modèles sur exactement la même découpe et les mêmes classes : le linéaire
-          sur comptages de mots (scikit-learn) et le vôtre en PyTorch. Le vôtre doit gagner.
-        Le troisième point de comparaison : toujours répondre la forme la plus fréquente.
-        À chaque essai, perte d'apprentissage ET perte de validation sur la même figure.
-        Rendre : nombre de classes, nombre de relevés gardés, les trois règles, les trois scores.
-        Savoir montrer le trajet du texte brut jusqu'au premier nombre qui entre dans le réseau.
-        """
+def justifier_les_decisions(dossier):
+    """Les comptes qui appuient les trois décisions du jeu.
+
+    Ces décisions changent le nombre de classes, donc le score : elles se défendent
+    avec des nombres, pas avec des intentions.
+    """
+    formes = dossier.df.select(forme=jeu.normaliser_forme())["forme"]
+    brutes = dossier.df["shape"].str.strip_chars().str.to_lowercase()
+
+    trous = int((brutes.is_null() | (brutes == "")).sum())
+    print(f"  relevés sans forme      : {trous}")
+    print(f"  valeurs distinctes      : {brutes.n_unique()} avant fusion, "
+          f"{formes.n_unique()} après")
+
+    comptes = formes.value_counts(sort=True).drop_nulls()
+    for source, cible in jeu.FUSIONS.items():
+        avant = int((brutes == source).sum())
+        apres = int((brutes == cible).sum())
+        print(f"  fusion {source} → {cible:<10} {avant} + {apres} = {avant + apres}")
+
+    for nom in sorted(jeu.FOURRE_TOUT):
+        print(f"  fourre-tout {nom:<11} {int((brutes == nom).sum())} relevés écartés")
+
+    sous_seuil = comptes.filter(pl.col("count") < jeu.SEUIL_CLASSE)
+    print(f"  classes sous {jeu.SEUIL_CLASSE} relevés : {sous_seuil.height} "
+          f"({int(sous_seuil['count'].sum())} relevés écartés) — "
+          f"{', '.join(sous_seuil['forme'].head(6).to_list())}…")
+
+
+def montrer_le_trajet(dossier):
+    """Du texte brut d'un témoin au premier nombre qui entre dans le réseau."""
+    indice = dossier.decoupe["apprentissage"][0]
+    texte = dossier.textes[indice]
+    mots = jeu.jetons(texte)
+    indices = dossier.vocabulaire.encoder(texte, dossier.longueur)
+
+    print(f"\n  Le trajet, sur un relevé réel :")
+    print(f"    1. texte brut     « {texte[:70]} »")
+    print(f"    2. nettoyé        « {jeu.nettoyer(texte)[:70].strip()} »")
+    print(f"    3. jetons         {mots[:9]}")
+    print(f"    4. indices        {indices[:9]}")
+    print(f"       (vocabulaire de {len(dossier.vocabulaire)} mots ; 0 = remplissage, "
+          f"1 = mot inconnu)")
+    print(f"    5. le réseau reçoit un vecteur de {dossier.longueur} entiers, puis "
+          f"remplace chaque entier par un vecteur appris.")
+
+
+def service_statistique(dossier, tenseurs_par_partie):
+    """« Un modèle linéaire simple sur des comptages de mots, monté en une pause. »
+
+    Même découpe, mêmes classes et même découpage en jetons que le réseau : ce qui
+    change entre les deux essais est le modèle, rien d'autre.
+    """
+    from sklearn.feature_extraction.text import CountVectorizer
+    from sklearn.linear_model import LogisticRegression
+
+    parties = {
+        nom: (
+            [dossier.textes[i] for i in dossier.decoupe[nom]],
+            [dossier.etiquettes[i] for i in dossier.decoupe[nom]],
+        )
+        for nom in ("apprentissage", "test")
+    }
+
+    comptages = CountVectorizer(analyzer=jeu.jetons, min_df=2)
+    with Chrono("linéaire du service statistique") as chrono:
+        x_apprentissage = comptages.fit_transform(parties["apprentissage"][0])
+        linéaire = LogisticRegression(max_iter=1000)
+        linéaire.fit(x_apprentissage, parties["apprentissage"][1])
+
+    predits = linéaire.predict(comptages.transform(parties["test"][0]))
+    print(f"    vocabulaire du linéaire : {len(comptages.vocabulary_)} mots")
+    return (
+        torch.tensor(predits),
+        torch.tensor(parties["test"][1]),
+        chrono.secondes,
     )
-    # Le socle est déjà là : bureau/jeu.py porte les trois décisions, preparer_le_jeu
-    # les applique, mesures.montrer rend les trois scores côte à côte.
+
+
+def phase03(dossier, iterations=12):
+    """Battre le service statistique.
+
+    Trois scores côte à côte, sur exactement la même découpe et les mêmes classes :
+    la baseline qui répond toujours la forme la plus fréquente, le linéaire sur
+    comptages de mots, et le réseau PyTorch. Le réseau doit passer devant.
+    """
+    titre(3, "battre le service statistique")
+    entrainement.fixer_graine(dossier.graine)
+
+    justifier_les_decisions(dossier)
+    montrer_le_trajet(dossier)
+
+    parties = {nom: tenseurs(dossier, nom)
+               for nom in ("apprentissage", "validation", "test")}
+    etiquettes_apprentissage = parties["apprentissage"][1]
+
+    print("\n  Essai 1 — toujours la forme la plus fréquente")
+    _, vrais = parties["test"]
+    majoritaire = int(torch.bincount(etiquettes_apprentissage).argmax())
+    print(f"    forme choisie           : {dossier.classes[majoritaire]}")
+    mesures.montrer("baseline", torch.full_like(vrais, majoritaire), vrais,
+                    dossier.classes)
+
+    print("\n  Essai 2 — le linéaire du service statistique (comptages de mots)")
+    predits_lineaire, vrais_lineaire, temps_lineaire = service_statistique(
+        dossier, parties
+    )
+    mesures.montrer("linéaire", predits_lineaire, vrais_lineaire, dossier.classes)
+
+    print("\n  Essai 3 — le réseau PyTorch")
+    modele = modeles.SacDeMots(len(dossier.vocabulaire), len(dossier.classes))
+    lots_apprentissage = jeu.lots(*parties["apprentissage"], taille=64,
+                                  graine=dossier.graine)
+    lots_validation = jeu.lots(*parties["validation"], taille=256, melanger=False)
+    with Chrono("réseau PyTorch") as chrono:
+        historique = entrainement.entrainer(
+            modele, lots_apprentissage, lots_validation,
+            iterations=iterations, pas=3e-3, releve_tous_les=1,
+        )
+    predits, vrais = entrainement.predire(
+        modele, jeu.lots(*parties["test"], taille=256, melanger=False)
+    )
+    mesures.montrer("réseau", predits, vrais, dossier.classes,
+                    etiquettes_apprentissage.tolist())
+
+    figures.courbes_de_perte(
+        {
+            "apprentissage": (historique["passage"], historique["perte"]),
+            "validation": (historique["passage"], historique["perte_validation"]),
+        },
+        "phase03_reseau.png",
+        "Phase 3 — réseau PyTorch : perte d'apprentissage et de validation",
+        abscisse="passage sur les données",
+    )
+
+    print(f"\n  {'essai':<34}{'taux':>8}{'F1 moyen':>11}{'temps':>9}")
+    lignes = [
+        ("toujours la plus fréquente", torch.full_like(vrais, majoritaire), 0.0),
+        ("linéaire sur comptages de mots", predits_lineaire, temps_lineaire),
+        ("réseau PyTorch", predits, chrono.secondes),
+    ]
+    for intitule, prediction, secondes in lignes:
+        print(f"  {intitule:<34}"
+              f"{mesures.taux_de_reussite(prediction, vrais):>8.3f}"
+              f"{mesures.f1_moyen(prediction, vrais, dossier.classes):>11.3f}"
+              f"{secondes:>8.1f}s")
+
+    return dossier.retenir(
+        3,
+        classes=len(dossier.classes),
+        releves=len(dossier.textes),
+        taux_baseline=mesures.taux_de_reussite(
+            torch.full_like(vrais, majoritaire), vrais),
+        taux_lineaire=mesures.taux_de_reussite(predits_lineaire, vrais),
+        taux_reseau=mesures.taux_de_reussite(predits, vrais),
+        f1_lineaire=mesures.f1_moyen(predits_lineaire, vrais, dossier.classes),
+        f1_reseau=mesures.f1_moyen(predits, vrais, dossier.classes),
+        temps_lineaire=temps_lineaire,
+        temps_reseau=chrono.secondes,
+    )
 
 
 def phase04(dossier):
