@@ -44,6 +44,17 @@ def courbes_de_perte(historiques, nom, titre, abscisse="itération"):
     return poser(fig, nom)
 
 
+def ligne(x, y, nom, titre, xlabel, ylabel):
+    """Une courbe simple, axes nommés — la facture de la phase 12."""
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(x, y, marker="o", linewidth=1.6)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(titre)
+    ax.grid(alpha=0.3)
+    return poser(fig, nom)
+
+
 def parts_des_mots(mots, parts, nom, titre):
     """Le témoignage mot par mot, avec la part de chaque mot dans la décision.
 

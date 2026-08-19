@@ -189,20 +189,82 @@ def phase11(dossier):
     return dossier.retenir(11, ecart_avant=ecart_avant, ecart_apres=ecart_apres)
 
 
-def phase12(dossier):
-    """Le Conseil demande la facture."""
+def phase12(dossier, longueurs=(32, 64, 128, 256, 512), repetitions=50):
+    """Le Conseil demande la facture.
+
+    L'attention de la phase 11, inchangée, chronométrée sur des séquences de plus
+    en plus longues — des vrais jetons du fichier, enchaînés. Plusieurs mesures
+    par longueur, on garde la médiane, pas un tir unique.
+    """
+    import statistics
+    import time
+
     titre(12, "le Conseil demande la facture")
-    a_faire(
-        """
-        Chronométrer votre propre attention (code de la phase 11, inchangé) sur des
-        séquences de 32, 64, 128, 256 puis 512 jetons. Plusieurs mesures par longueur,
-        on garde une valeur stable, pas un tir unique (bureau.entrainement.Chrono).
-        Mesurer aussi la taille de la matrice de poids à chaque longueur, en nombre de cases.
-        Une figure : longueur en abscisse, temps en ordonnée, axes nommés.
-        Trois lignes : en doublant la longueur, par combien le temps est-il multiplié, et
-        pourquoi ce facteur-là. Comparer vos mesures entre elles, pas à une référence.
-        Finir par : à quelle longueur votre machine devient inutilisable, d'après vos chiffres.
-        """
+    attention = la_tete_de_la_phase10(dossier)
+    tete = attention["tete"]
+
+    # Des séquences de vrais jetons : les témoignages du fichier, mis bout à bout.
+    mots = []
+    for indice in range(len(dossier.textes)):
+        mots.extend(jeu.jetons(dossier.textes[indice]))
+        if len(mots) >= max(longueurs):
+            break
+    entrainement.fixer_graine(dossier.graine)
+    table = nn.Embedding(len(dossier.vocabulaire), DIMENSION)
+    indices = torch.tensor([[dossier.vocabulaire.index.get(m, 1)
+                             for m in mots[: max(longueurs)]]])
+    with torch.no_grad():
+        vecteurs = table(indices) + encodage_de_position(max(longueurs), DIMENSION)
+
+    lignes = []
+    with torch.no_grad():
+        for n in longueurs:
+            entree = vecteurs[:, :n].contiguous()
+            for _ in range(5):  # chauffe : les premiers passages paient les caches
+                tete(entree)
+            temps = []
+            for _ in range(repetitions):
+                depart = time.perf_counter()
+                _, poids = tete(entree)
+                temps.append(time.perf_counter() - depart)
+            lignes.append({"n": n, "ms": statistics.median(temps) * 1000,
+                           "cases": poids.shape[-1] * poids.shape[-2]})
+
+    print(f"  {repetitions} passages avant par longueur, on garde la médiane :\n")
+    print(f"  {'jetons':>8}{'temps (ms)':>12}{'cases de la matrice':>21}"
+          f"{'facteur vs longueur/2':>23}")
+    for i, ligne in enumerate(lignes):
+        facteur = ligne["ms"] / lignes[i - 1]["ms"] if i else None
+        print(f"  {ligne['n']:>8}{ligne['ms']:>12.3f}{ligne['cases']:>21,}"
+              + (f"{facteur:>22.1f}×" if facteur else f"{'—':>23}"))
+
+    figures.ligne([l["n"] for l in lignes], [l["ms"] for l in lignes],
+                  "phase12_facture.png",
+                  "Phase 12 — le coût d'un passage avant de l'attention",
+                  "longueur de la séquence (jetons)",
+                  "temps d'un passage avant (ms)")
+
+    # À quelle longueur la machine devient inutilisable, d'après NOS chiffres :
+    # le terme quadratique est estimé sur les deux plus grandes longueurs, et le
+    # critère est posé : « inutilisable » quand relire les 88 875 relevés du
+    # fichier prendrait plus d'une heure, soit 40,5 ms par relevé.
+    n1, n2 = lignes[-2], lignes[-1]
+    quadratique = (n2["ms"] - n1["ms"]) / (n2["n"] ** 2 - n1["n"] ** 2)
+    constante = n2["ms"] - quadratique * n2["n"] ** 2
+    seuil_ms = 3600 * 1000 / 88875
+    n_limite = int(((seuil_ms - constante) / quadratique) ** 0.5)
+    print(f"\n  terme quadratique estimé sur 256 → 512 : "
+          f"{quadratique * 1000:.2f} µs pour 1000 cases")
+    limite_lisible = f"{n_limite:,}".replace(",", " ")
+    print(f"  critère « inutilisable » : relire les 88 875 relevés du fichier en "
+          f"plus d'une heure,\n  soit {seuil_ms:.1f} ms par relevé — atteint vers "
+          f"{limite_lisible} jetons par relevé.")
+
+    return dossier.retenir(
+        12,
+        temps_ms={l["n"]: l["ms"] for l in lignes},
+        facteur_256_512=lignes[-1]["ms"] / lignes[-2]["ms"],
+        n_limite=n_limite,
     )
 
 

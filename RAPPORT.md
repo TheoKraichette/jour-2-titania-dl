@@ -825,16 +825,35 @@ seconde n'est plus symétriquement fade, chaque ligne a pris un relief propre.
 
 ### Phase 12 — le Conseil demande la facture
 
-| Longueur (jetons) | Temps d'un passage avant | Cases de la matrice de poids |
-|---|---|---|
-| 32 | | |
-| 64 | | |
-| 128 | | |
-| 256 | | |
-| 512 | | |
+Le code de la phase 11, inchangé, sur des séquences de vrais jetons du fichier
+mis bout à bout. Cinquante passages avant par longueur, on garde la médiane.
+Figure, axes nommés : `figures/phase12_facture.png`.
 
-**À écrire :** en doublant la longueur, par combien le temps est multiplié et
-pourquoi ce facteur-là ; à quelle longueur la machine devient inutilisable.
+| Longueur (jetons) | Temps d'un passage avant | Cases de la matrice | Facteur vs longueur/2 |
+|---|---|---|---|
+| 32 | 0,040 ms | 1 024 | — |
+| 64 | 0,057 ms | 4 096 | ×1,4 |
+| 128 | 0,092 ms | 16 384 | ×1,6 |
+| 256 | 0,412 ms | 65 536 | ×4,5 |
+| 512 | 1,866 ms | 262 144 | **×4,5** |
+
+**Les trois lignes que le Conseil demande.** En doublant la longueur, le temps
+est multiplié par 4,5 dès que la séquence dépasse la centaine de jetons — parce
+que le mécanisme compare chaque mot à tous les autres : doubler n, c'est
+quadrupler les n² cases de la matrice, et les deux produits matriciels qui
+l'entourent suivent. Aux petites longueurs (×1,4 puis ×1,6), c'est le coût fixe
+d'un passage qui domine encore : le terme quadratique ne se voit qu'une fois
+qu'il a dépassé les frais de départ. Mes mesures se comparent entre elles : le
+facteur mesuré 256 → 512 vaut 4,5 pour un facteur de cases exactement 4 — le
+léger excès vient de la mémoire, la matrice de 262 144 cases ne tient plus dans
+les caches rapides du processeur.
+
+**La phrase que le Conseil attend.** Critère posé d'avance : la machine est
+inutilisable quand relire les 88 875 relevés du fichier prend plus d'une heure,
+soit 40,5 ms par relevé. D'après le terme quadratique estimé sur mes deux plus
+grandes mesures, ce seuil est atteint vers **2 340 jetons par relevé**. Nos
+témoignages tronqués font 29 jetons au plus : le Bureau a de la marge — mais des
+transmissions complètes, non tronquées à 135 caractères, la consommeraient vite.
 
 ### Phase 13 — deux regards sur le même relevé
 
