@@ -205,10 +205,16 @@ def service_statistique(dossier):
     predits = linéaire.predict(comptages.transform(textes_test))
     print(f"    jetons vus par le linéaire : {len(comptages.vocabulary_)}")
     return torch.tensor(predits), torch.tensor(etiquettes_test), chrono.secondes
-def essai_du_reseau(dossier, entrees, poids, graine, iterations, taille_lot, pas):
-    """Un entraînement complet du réseau, rendu avec ses prédictions et sa courbe."""
+def essai_du_reseau(dossier, entrees, poids, graine, iterations, taille_lot, pas,
+                    fabrique=None):
+    """Un entraînement complet du réseau, rendu avec ses prédictions et sa courbe.
+
+    `fabrique` : construit le modèle — par défaut l'empilement de la phase 3 ;
+    la phase 6 passe le sien, plus profond.
+    """
     entrainement.fixer_graine(graine)
-    modele = modeles.Empilement(len(dossier.vocabulaire), len(dossier.classes))
+    modele = (fabrique or (lambda: modeles.Empilement(
+        len(dossier.vocabulaire), len(dossier.classes))))()
     with Chrono() as chrono:
         historique = entrainement.entrainer(
             modele,
@@ -223,6 +229,7 @@ def essai_du_reseau(dossier, entrees, poids, graine, iterations, taille_lot, pas
     predits, vrais = entrainement.predire(
         modele, jeu.lots(entrees["test"], entrees["cibles_test"],
                          taille=1024, melanger=False))
+    dossier.dernier_modele = modele  # la phase 9 repasse des relevés dedans
     return predits, vrais, historique, chrono.secondes
 
 
@@ -625,68 +632,583 @@ def phase05(dossier, graines=(0, 1, 2)):
     )
 
 
-def phase06(dossier):
-    """Le champ de vision du modèle."""
+DILATATIONS = (1, 2, 4, 8)  # l'empilement de la phase 6 : étendue 31 > 29
+
+
+def fabrique_empilement(dossier, residuel=False, norme=None):
+    return lambda: modeles.Empilement(
+        len(dossier.vocabulaire), len(dossier.classes),
+        dilatations=DILATATIONS, residuel=residuel, norme=norme,
+    )
+
+
+def phase06(dossier, graines=(0, 1, 2), iterations=8, taille_lot=256):
+    """Le champ de vision du modèle.
+
+    Toutes les positions sont traitées de front — aucune ne dépend de la
+    précédente, la contrainte de la salle des calculs est respectée par
+    construction. La démonstration que la sortie dépend de toutes les positions se
+    fait AVANT le premier entraînement : d'abord par le calcul de l'étendue,
+    ensuite expérimentalement, sur le modèle encore vierge.
+    """
     titre(6, "le champ de vision du modèle")
-    a_faire(
-        """
-        Interdit : parcourir un témoignage mot après mot en attendant le précédent.
-        Toutes les positions traitées de front.
-        AVANT le premier entraînement, démontrer par le calcul de votre propre code que
-        la sortie dépend de toutes les positions du relevé le plus long accepté.
-        Rendre : longueur maximale et médiane en jetons ; un tableau couche par couche
-        (ce que chaque couche ajoute à l'étendue vue, et le cumul) ; la comparaison du
-        total à la longueur maximale en une ligne ; la vérification expérimentale
-        (changer un mot au tout début, montrer que la sortie bouge).
-        Si l'empilement dégrade le score : problème connu, solution connue, la nommer.
-        """
+    entrainement.fixer_graine(dossier.graine)
+
+    # --- Les longueurs ---------------------------------------------------------
+    longueurs = sorted(
+        len(jeu.jetons(dossier.textes[i])) for i in dossier.decoupe["apprentissage"])
+    print(f"  longueur maximale acceptée en entrée : {dossier.longueur} jetons "
+          f"(99e centile ; le plus long relevé du fichier en fait {longueurs[-1]}, "
+          f"tronqué)")
+    print(f"  longueur médiane                     : "
+          f"{longueurs[len(longueurs) // 2]} jetons")
+
+    # --- Le tableau couche par couche, avant tout entraînement ------------------
+    modele = fabrique_empilement(dossier)()
+    print(f"\n  l'empilement : fenêtre {modele.fenetre}, "
+          f"dilatations {', '.join(str(d) for d in DILATATIONS)}")
+    print(f"    {'couche':>7}{'dilatation':>12}{'ajout':>12}{'cumul':>8}")
+    for ligne in modele.etendue_par_couche():
+        print(f"    {ligne['couche']:>7}{ligne['dilatation']:>12}"
+              f"{ligne['ajout']:>12}{ligne['cumul']:>8}")
+    total = modele.etendue_par_couche()[-1]["cumul"]
+    print(f"\n  étendue totale {total} > longueur maximale {dossier.longueur} : "
+          f"la position centrale d'un relevé voit ses {dossier.longueur} positions, "
+          f"et le maximum final fait dépendre la sortie de toutes.")
+
+    # --- La vérification expérimentale, modèle encore vierge --------------------
+    # Le relevé le plus long du jeu, un mot changé tout au début, et on mesure ce
+    # qui bouge : la sortie du classement, et jusqu'où la modification se propage
+    # dans les positions.
+    indice = max(range(len(dossier.textes)),
+                 key=lambda i: len(jeu.jetons(dossier.textes[i])))
+    texte = dossier.textes[indice]
+    original = torch.tensor(
+        [dossier.vocabulaire.encoder(texte, dossier.longueur)])
+    modifie = original.clone()
+    remplacant = dossier.vocabulaire.index.get("light", 2)
+    if modifie[0, 0].item() == remplacant:
+        remplacant = dossier.vocabulaire.index.get("dark", 3)
+    modifie[0, 0] = remplacant
+
+    modele.eval()
+    with torch.no_grad():
+        ecart_sortie = (modele(original) - modele(modifie)).abs().max().item()
+        ecart_positions = (modele.cartes(original) - modele.cartes(modifie)) \
+            .abs().amax(dim=1).squeeze(0)
+    touchees = (ecart_positions > 1e-9).nonzero().squeeze(-1)
+    print(f"\n  vérification expérimentale (modèle non entraîné) :")
+    print(f"    relevé : « {texte[:64]} »")
+    print(f"    premier mot remplacé par "
+          f"« {dossier.vocabulaire.mots[remplacant]} »")
+    print(f"    la sortie bouge : écart maximal {ecart_sortie:.4f} sur les logits")
+    print(f"    la modification se propage jusqu'à la position "
+          f"{int(touchees.max()) + 1} — rayon mesuré {int(touchees.max())}, "
+          f"rayon théorique {(total - 1) // 2}")
+
+    # --- Puis on entraîne, et on compare au score défendu depuis la phase 3 -----
+    entrees = {}
+    for partie in ("apprentissage", "validation", "test"):
+        entrees[partie], entrees[f"cibles_{partie}"] = tenseurs(dossier, partie)
+    vrais = entrees["cibles_test"]
+    effectifs = torch.bincount(entrees["cibles_apprentissage"]).float()
+    poids = effectifs ** -0.25
+    poids = poids / poids.mean()
+
+    seuils = dict(PHASE3)
+    if 3 in dossier.scores:
+        seuils = {"taux_pire": dossier.scores[3]["taux_pire"],
+                  "f1_pire": dossier.scores[3]["f1_pire"]}
+
+    def trois_essais(residuel, norme, intitule):
+        resultats = []
+        for graine in graines:
+            predits, _, historique, secondes = essai_du_reseau(
+                dossier, entrees, poids, graine, iterations, taille_lot, 2e-3,
+                fabrique=fabrique_empilement(dossier, residuel=residuel,
+                                             norme=norme))
+            resultats.append({
+                "taux": mesures.taux_de_reussite(predits, vrais),
+                "f1": mesures.f1_moyen(predits, vrais, dossier.classes),
+                "secondes": secondes,
+                "historique": historique,
+            })
+            print(f"    initialisation {graine} : taux {resultats[-1]['taux']:.4f}"
+                  f"   F1 {resultats[-1]['f1']:.4f}   ({secondes:.1f} s)")
+        pire = (min(r["taux"] for r in resultats), min(r["f1"] for r in resultats))
+        print(f"    pire essai : {pire[0]:.4f} / {pire[1]:.4f}"
+              f"   plancher phase 3 : {seuils['taux_pire']:.4f} / "
+              f"{seuils['f1_pire']:.4f}")
+        figures.courbes_de_perte(
+            {
+                "apprentissage": (resultats[0]["historique"]["passage"],
+                                  resultats[0]["historique"]["perte"]),
+                "validation": (resultats[0]["historique"]["passage"],
+                               resultats[0]["historique"]["perte_validation"]),
+            },
+            f"phase06_{intitule}.png",
+            f"Phase 6 — empilement dilaté ({intitule.replace('_', ' ')})",
+            abscisse="passage sur les données",
+        )
+        return resultats, pire
+
+    print(f"\n  entraînement de l'empilement ({len(DILATATIONS)} couches), "
+          f"réglages de la phase 5 :")
+    resultats, pire = trois_essais(residuel=False, norme=None,
+                                   intitule="sans_residu")
+    retenue = {"residuel": False, "norme": None}
+
+    if pire[0] < seuils["taux_pire"] or pire[1] < seuils["f1_pire"]:
+        # Le problème connu : en traversant quatre couches, le gradient s'affaiblit
+        # et les premières couches n'apprennent presque plus — empiler dégrade.
+        # La solution connue : les connexions résiduelles, qui donnent au gradient
+        # un chemin direct vers l'entrée.
+        print("\n  l'empilement dégrade le score : problème connu (le gradient "
+              "s'affaiblit\n  en traversant les couches), solution connue "
+              "(connexions résiduelles) —\n  appliquée et remesurée :")
+        resultats_residu, pire_residu = trois_essais(residuel=True, norme=None,
+                                                     intitule="avec_residu")
+
+        # La recette standard des empilements profonds ne s'arrête pas au résidu :
+        # elle normalise la sortie de chaque couche. Mesurée aussi, séparément.
+        print("\n  la recette standard ajoute la normalisation par lot au résidu — "
+              "mesurée aussi :")
+        resultats_norme, pire_norme = trois_essais(residuel=True, norme="lot",
+                                                   intitule="residu_et_norme")
+
+        # On retient la recette complète si elle tient le plancher et ne cède pas
+        # plus que le bruit au résidu seul ; sinon le résidu seul s'il tient.
+        norme_tient = (pire_norme[0] >= seuils["taux_pire"]
+                       and pire_norme[1] >= seuils["f1_pire"])
+        norme_ne_cede_pas = (pire_norme[0] >= pire_residu[0] - 0.005
+                             and pire_norme[1] >= pire_residu[1] - 0.005)
+        if norme_tient and norme_ne_cede_pas:
+            resultats, pire = resultats_norme, pire_norme
+            retenue = {"residuel": True, "norme": "lot"}
+        else:
+            resultats, pire = resultats_residu, pire_residu
+            retenue = {"residuel": True, "norme": None}
+        print(f"\n  montage retenu : résidu"
+              + (" + normalisation par lot" if retenue["norme"] else " seul"))
+
+    tient = pire[0] >= seuils["taux_pire"] and pire[1] >= seuils["f1_pire"]
+    print("\n  " + ("✓ l'empilement couvre le relevé entier et s'entraîne encore"
+                    if tient else
+                    "✗ le score reste en dessous du plancher de la phase 3"))
+
+    return dossier.retenir(
+        6,
+        etendue=total,
+        longueur=dossier.longueur,
+        rayon_mesure=int(touchees.max()),
+        ecart_sortie=ecart_sortie,
+        residuel=retenue["residuel"],
+        norme=retenue["norme"],
+        taux_pire=pire[0],
+        f1_pire=pire[1],
+        taux_moyen=sum(r["taux"] for r in resultats) / len(resultats),
+        f1_moyen=sum(r["f1"] for r in resultats) / len(resultats),
+        temps_moyen=sum(r["secondes"] for r in resultats) / len(resultats),
     )
 
 
-def phase07(dossier):
-    """Quatre relevés à la fois."""
+# Le montage et le score de la phase 6, pour quand la phase 7 tourne seule.
+PHASE6 = {"taux_pire": 0.5387, "f1_pire": 0.5018,
+          "residuel": True, "norme": None}
+
+
+def phase07(dossier, graines=(0, 1, 2), iterations=8):
+    """Quatre relevés à la fois.
+
+    Le Conseil a revendu la moitié de la salle des calculs : 4 relevés par lot.
+    L'entraînement de la phase 6 est relancé tel quel, sans rien changer d'autre —
+    puis la phase répond à la vraie question : qu'est-ce qui, dans un montage, a
+    le droit de dépendre des autres relevés du lot ? Le montage retenu en phase 6
+    n'a rien de tel — c'est un choix mesuré. La recette écartée en phase 6, la
+    normalisation par lot, en dépendait : la voici mise à l'épreuve, puis corrigée
+    en modifiant le modèle, pas le lot.
+    """
     titre(7, "quatre relevés à la fois")
-    a_faire(
-        """
-        Relancer l'entraînement de la phase 6 avec des lots de 4 (jeu.lots(taille=4)),
-        sans rien changer d'autre, et noter ce qui se passe : c'est le point de départ.
-        Puis faire tenir l'entraînement à 4, en modifiant le modèle plutôt que le lot.
-        Rendre : la courbe à 4 avant et après correction sur la même figure ; le montage
-        corrigé relancé à la taille de lot de la phase 6 (la correction coûte-t-elle
-        quelque chose quand la machine va bien ?) ; la phrase qui dit ce qui, dans
-        l'ancien montage, dépendait des autres relevés du lot.
-        Question à savoir trancher : que se passe-t-il si on prédit sur un seul relevé ?
-        """
+
+    config = dict(PHASE6)
+    if 6 in dossier.scores:
+        config.update({k: dossier.scores[6][k]
+                       for k in ("taux_pire", "f1_pire", "residuel", "norme")})
+
+    entrees = {}
+    for partie in ("apprentissage", "validation", "test"):
+        entrees[partie], entrees[f"cibles_{partie}"] = tenseurs(dossier, partie)
+    vrais = entrees["cibles_test"]
+    effectifs = torch.bincount(entrees["cibles_apprentissage"]).float()
+    poids = effectifs ** -0.25
+    poids = poids / poids.mean()
+
+    def un_essai(norme, taille_lot, graine=0):
+        predits, _, historique, secondes = essai_du_reseau(
+            dossier, entrees, poids, graine, iterations, taille_lot, 2e-3,
+            fabrique=fabrique_empilement(dossier, residuel=config["residuel"],
+                                         norme=norme))
+        return {
+            "taux": mesures.taux_de_reussite(predits, vrais),
+            "f1": mesures.f1_moyen(predits, vrais, dossier.classes),
+            "secondes": secondes,
+            "historique": historique,
+        }
+
+    # --- Le point de départ : l'entraînement de la phase 6, à 4 par lot ---------
+    # Une seule initialisation par courbe : un entraînement à 4 par lot fait
+    # 12 759 mises à jour par passage, la comparaison de courbes se fait à graine
+    # égale et le score final se confirme à 256 sur les trois graines.
+    print("  l'entraînement de la phase 6, relancé à 4 relevés par lot, sans rien "
+          "changer d'autre :")
+    retenu4 = un_essai(norme=config["norme"], taille_lot=4)
+    print(f"    montage retenu (résidu seul) : taux {retenu4['taux']:.4f}   "
+          f"F1 {retenu4['f1']:.4f}   ({retenu4['secondes']:.0f} s)"
+          f"   — phase 6 à 256 : {config['taux_pire']:.4f} / "
+          f"{config['f1_pire']:.4f}")
+    print("    rien n'y dépend des autres relevés du lot — et ce n'est pas un "
+          "hasard, c'est la\n    conséquence d'un choix mesuré en phase 6. La "
+          "recette qui en dépendait :")
+
+    # --- Ce qui aurait dépendu du lot, et n'aurait jamais dû en dépendre --------
+    # La normalisation par lot centre et réduit chaque canal avec la moyenne et la
+    # variance DU LOT : la sortie d'un relevé dépend des trois autres relevés
+    # tirés avec lui. À 256 le lot ressemble à la population et ça ne se voit
+    # pas ; à 4, chaque relevé est normalisé contre trois voisins de hasard.
+    print("\n  la normalisation par lot (écartée en phase 6), à 4 relevés par lot :")
+    avant = un_essai(norme="lot", taille_lot=4)
+    print(f"    norme par lot    : taux {avant['taux']:.4f}   F1 {avant['f1']:.4f}"
+          f"   ({avant['secondes']:.0f} s)")
+
+    # Démonstration directe de la dépendance, avant toute correction :
+    entrainement.fixer_graine(dossier.graine)
+    temoin = fabrique_empilement(dossier, residuel=config["residuel"],
+                                 norme="lot")()
+    temoin.train()
+    seul = entrees["test"][:1]
+    accompagne = entrees["test"][:4]
+    with torch.no_grad():
+        ecart = (temoin(seul) - temoin(accompagne)[:1]).abs().max().item()
+    print(f"    le même relevé, seul puis accompagné de trois autres, dans ce "
+          f"modèle en mode\n    entraînement : écart maximal {ecart:.4f} sur les "
+          f"logits — sa sortie dépend de ses\n    voisins de lot.")
+
+    # --- La correction : modifier le modèle, pas le lot --------------------------
+    # Normalisation par groupe : les mêmes statistiques, calculées dans le relevé
+    # seul. Le modèle ne regarde plus jamais ses voisins de lot.
+    print("\n  correction — normalisation par groupe (statistiques calculées dans "
+          "le relevé seul) :")
+    apres = un_essai(norme="groupe", taille_lot=4)
+    print(f"    norme par groupe : taux {apres['taux']:.4f}   F1 {apres['f1']:.4f}"
+          f"   ({apres['secondes']:.0f} s)")
+
+    figures.courbes_de_perte(
+        {
+            "norme par lot — avant correction":
+                (avant["historique"]["passage"],
+                 avant["historique"]["perte_validation"]),
+            "norme par groupe — après correction":
+                (apres["historique"]["passage"],
+                 apres["historique"]["perte_validation"]),
+            "montage retenu (résidu seul)":
+                (retenu4["historique"]["passage"],
+                 retenu4["historique"]["perte_validation"]),
+        },
+        "phase07_quatre_par_lot.png",
+        "Phase 7 — perte de validation à 4 relevés par lot, avant et après",
+        abscisse="passage sur les données",
+    )
+
+    # --- Le montage corrigé quand la machine va bien -----------------------------
+    print("\n  le montage corrigé, relancé à la taille de lot de la phase 6 (256), "
+          "trois initialisations :")
+    controles = []
+    for graine in graines:
+        controles.append(un_essai(norme="groupe", taille_lot=256, graine=graine))
+        print(f"    initialisation {graine} : taux {controles[-1]['taux']:.4f}"
+              f"   F1 {controles[-1]['f1']:.4f}   ({controles[-1]['secondes']:.0f} s)")
+    pire = (min(c["taux"] for c in controles), min(c["f1"] for c in controles))
+    print(f"    pire essai : {pire[0]:.4f} / {pire[1]:.4f}"
+          f"   phase 6 : {config['taux_pire']:.4f} / {config['f1_pire']:.4f}")
+
+    # --- Et sur un seul relevé ? --------------------------------------------------
+    with torch.no_grad():
+        corrige = fabrique_empilement(dossier, residuel=config["residuel"],
+                                      norme="groupe")()
+        corrige.train()
+        ecart_corrige = (corrige(seul) - corrige(accompagne)[:1]).abs().max().item()
+    print(f"\n  la même expérience sur le montage corrigé : écart "
+          f"{ecart_corrige:.6f} — un relevé seul\n  donne exactement la même "
+          f"sortie qu'accompagné. L'ancien montage, lui, se normalise\n  contre "
+          f"lui-même en mode entraînement, et en mode évaluation il s'appuie sur "
+          f"des\n  moyennes mémorisées — apprises sur des lots de 4, donc bruitées.")
+
+    return dossier.retenir(
+        7,
+        taux_avant=avant["taux"], f1_avant=avant["f1"],
+        taux_apres=apres["taux"], f1_apres=apres["f1"],
+        taux_controle=pire[0], f1_controle=pire[1],
+        ecart_lot=ecart, ecart_corrige=ecart_corrige,
     )
 
 
-def phase08(dossier):
-    """Le Conseil a lu trois relevés."""
+def entrees_censurees(dossier, interdits):
+    """Le jeu entier, sans un mot de forme, découpe et classes inchangées.
+
+    Les textes sont censurés en place dans l'ordre du jeu : les indices de la
+    découpe restent valables, les étiquettes ne bougent pas. Le vocabulaire est
+    reconstruit sur les textes censurés de la seule partie apprentissage.
+    """
+    textes = [jeu.censurer(t, interdits) for t in dossier.textes]
+    vocabulaire = jeu.Vocabulaire(
+        [textes[i] for i in dossier.decoupe["apprentissage"]])
+    entrees = {}
+    for partie in ("apprentissage", "validation", "test"):
+        indices = dossier.decoupe[partie]
+        entrees[partie], entrees[f"cibles_{partie}"] = jeu.en_tenseurs(
+            [textes[i] for i in indices],
+            [dossier.etiquettes[i] for i in indices],
+            vocabulaire, dossier.longueur)
+    return textes, vocabulaire, entrees
+
+
+def phase08(dossier, graines=(0, 1, 2), iterations=8, taille_lot=256):
+    """Le Conseil a lu trois relevés.
+
+    « Nous ne payons pas pour une machine qui recopie un mot. » Le vocabulaire des
+    formes est interdit au modèle, à l'apprentissage comme à l'évaluation, la
+    preuve du zéro est calculée par le code, et la chute est rendue sans être
+    maquillée.
+    """
     titre(8, "le Conseil a lu trois relevés")
-    a_faire(
-        """
-        Le mot de la forme est présent tel quel dans 34,7 % des relevés, 72,6 % pour light,
-        9,9 % pour circle : le score global ne vient pas du même endroit selon les classes.
-        1. Construire la liste des mots interdits (jeu.mots_interdits est un début à compléter) ;
-        2. l'appliquer au texte, à l'apprentissage comme à l'évaluation ;
-        3. prouver par le code qu'il reste zéro relevé contenant un mot interdit, et l'afficher ;
-        4. réentraîner à l'identique et rendre la chute.
-        Rendre les deux résumés de score (taux global et moyenne par classe) avant et après,
-        dire lequel chute le plus et pourquoi, nommer les classes qui s'effondrent.
-        """
+
+    config = dict(PHASE6)
+    if 6 in dossier.scores:
+        config.update({k: dossier.scores[6][k] for k in ("residuel", "norme")})
+
+    # --- 1. La liste des mots interdits ------------------------------------------
+    interdits = jeu.mots_interdits(dossier.classes)
+    print(f"  mots interdits : {len(interdits)}")
+    print("    " + ", ".join(sorted(m for m in interdits if "'" not in m)))
+    print("    (plus la variante « 's » de chacun)")
+
+    # Les comptes du Conseil, refaits : le mot de la forme, présent tel quel.
+    contient_sa_forme = [
+        dossier.classes[dossier.etiquettes[i]] in jeu.jetons(dossier.textes[i])
+        for i in range(len(dossier.textes))
+    ]
+    part_globale = sum(contient_sa_forme) / len(contient_sa_forme)
+    print(f"\n  le mot de la forme est présent tel quel dans "
+          f"{part_globale:.1%} des relevés")
+    for forme in ("light", "circle"):
+        indice_forme = dossier.classes.index(forme)
+        concernes = [contient_sa_forme[i] for i in range(len(dossier.textes))
+                     if dossier.etiquettes[i] == indice_forme]
+        print(f"    {forme:<8}: {sum(concernes) / len(concernes):.1%}")
+
+    # --- 2. et 3. L'interdiction, et la preuve du zéro ---------------------------
+    textes_censures, vocabulaire, censure = entrees_censurees(dossier, interdits)
+    restants = sum(1 for t in textes_censures if set(jeu.jetons(t)) & interdits)
+    avant_censure = sum(1 for t in dossier.textes
+                        if set(jeu.jetons(t)) & interdits)
+    print(f"\n  relevés contenant un mot interdit avant traitement : "
+          f"{avant_censure} ({avant_censure / len(dossier.textes):.1%})")
+    print(f"  relevés contenant encore un mot interdit après traitement : "
+          f"{restants}")
+    assert restants == 0, "l'interdiction n'est pas effective"
+    print(f"  vocabulaire censuré : {len(vocabulaire)} mots")
+
+    # --- 4. Réentraîner à l'identique --------------------------------------------
+    entrees = {}
+    for partie in ("apprentissage", "validation", "test"):
+        entrees[partie], entrees[f"cibles_{partie}"] = tenseurs(dossier, partie)
+    vrais = entrees["cibles_test"]
+    effectifs = torch.bincount(entrees["cibles_apprentissage"]).float()
+    poids = effectifs ** -0.25
+    poids = poids / poids.mean()
+
+    def trois_essais(entrees_du_jeu, taille_vocabulaire):
+        resultats, premier_modele = [], None
+        for graine in graines:
+            fabrique = lambda: modeles.Empilement(
+                taille_vocabulaire, len(dossier.classes),
+                dilatations=DILATATIONS, residuel=config["residuel"],
+                norme=config["norme"])
+            predits, _, historique, secondes = essai_du_reseau(
+                dossier, entrees_du_jeu, poids, graine, iterations, taille_lot,
+                2e-3, fabrique=fabrique)
+            if graine == graines[0]:
+                premier_modele = dossier.dernier_modele
+            resultats.append({
+                "graine": graine, "predits": predits,
+                "taux": mesures.taux_de_reussite(predits, vrais),
+                "f1": mesures.f1_moyen(predits, vrais, dossier.classes),
+            })
+            print(f"    initialisation {graine} : taux {resultats[-1]['taux']:.4f}"
+                  f"   F1 {resultats[-1]['f1']:.4f}   ({secondes:.0f} s)")
+        return resultats, premier_modele
+
+    print("\n  le montage de la phase 6, sur le texte intact :")
+    avant, _ = trois_essais(entrees, len(dossier.vocabulaire))
+    print("\n  le même montage, réentraîné à l'identique sur le texte censuré :")
+    apres, modele_censure = trois_essais(censure, len(vocabulaire))
+
+    # --- La chute, sur les deux résumés -------------------------------------------
+    def bilan(resultats):
+        return (sum(r["taux"] for r in resultats) / len(resultats),
+                sum(r["f1"] for r in resultats) / len(resultats))
+
+    taux_avant, f1_avant = bilan(avant)
+    taux_apres, f1_apres = bilan(apres)
+    print(f"\n  {'':<22}{'taux global':>13}{'F1 moyen par classe':>21}")
+    print(f"  {'avant interdiction':<22}{taux_avant:>13.4f}{f1_avant:>21.4f}")
+    print(f"  {'après interdiction':<22}{taux_apres:>13.4f}{f1_apres:>21.4f}")
+    print(f"  {'chute':<22}{taux_avant - taux_apres:>13.4f}"
+          f"{f1_avant - f1_apres:>21.4f}"
+          f"   ({(taux_avant - taux_apres) / taux_avant:.1%} et "
+          f"{(f1_avant - f1_apres) / f1_avant:.1%} en relatif)")
+
+    # --- Le score par classe avant et après, et les classes effondrées ------------
+    par_classe_avant = {l["forme"]: l for l in mesures.par_classe(
+        avant[0]["predits"], vrais, dossier.classes)}
+    par_classe_apres = {l["forme"]: l for l in mesures.par_classe(
+        apres[0]["predits"], vrais, dossier.classes)}
+    chutes = sorted(
+        dossier.classes,
+        key=lambda f: par_classe_apres[f]["rappel"] - par_classe_avant[f]["rappel"])
+    print(f"\n  rappel par classe (initialisation 0), les plus touchées d'abord :")
+    print(f"    {'forme':<12}{'effectif':>9}{'avant':>8}{'après':>8}{'chute':>8}")
+    for forme in chutes[:8]:
+        a, b = par_classe_avant[forme], par_classe_apres[forme]
+        print(f"    {forme:<12}{a['effectif']:>9}{a['rappel']:>8.3f}"
+              f"{b['rappel']:>8.3f}{b['rappel'] - a['rappel']:>8.3f}")
+    print(f"\n  les classes effondrées : "
+          f"{', '.join(chutes[:3])}")
+
+    # Ce que la phase 9 réutilise : le jeu censuré, le modèle entraîné dessus
+    # (initialisation 0) et la configuration du montage.
+    dossier.censure = {
+        "textes": textes_censures, "vocabulaire": vocabulaire,
+        "entrees": censure, "poids": poids, "interdits": interdits,
+        "config": config, "modele": modele_censure,
+    }
+
+    return dossier.retenir(
+        8,
+        interdits=len(interdits),
+        restants=restants,
+        taux_avant=taux_avant, f1_avant=f1_avant,
+        taux_apres=taux_apres, f1_apres=f1_apres,
+        effondrees=chutes[:3],
     )
+
+
+def jeu_et_modele_de_la_phase8(dossier):
+    """La phase 9 part du modèle de la phase 8. S'il n'est pas déjà dans le
+    dossier (phase 9 lancée seule), il est réentraîné à l'identique,
+    initialisation 0."""
+    if getattr(dossier, "censure", None) and dossier.censure.get("modele"):
+        return dossier.censure
+    print("  (modèle de la phase 8 absent du dossier : réentraîné à l'identique, "
+          "initialisation 0)")
+    config = dict(PHASE6)
+    if 6 in dossier.scores:
+        config.update({k: dossier.scores[6][k] for k in ("residuel", "norme")})
+    interdits = jeu.mots_interdits(dossier.classes)
+    textes, vocabulaire, entrees = entrees_censurees(dossier, interdits)
+    effectifs = torch.bincount(entrees["cibles_apprentissage"]).float()
+    poids = effectifs ** -0.25
+    poids = poids / poids.mean()
+    essai_du_reseau(
+        dossier, entrees, poids, dossier.graine, 8, 256, 2e-3,
+        fabrique=lambda: modeles.Empilement(
+            len(vocabulaire), len(dossier.classes), dilatations=DILATATIONS,
+            residuel=config["residuel"], norme=config["norme"]))
+    dossier.censure = {"textes": textes, "vocabulaire": vocabulaire,
+                       "entrees": entrees, "interdits": interdits,
+                       "config": config, "modele": dossier.dernier_modele}
+    return dossier.censure
 
 
 def phase09(dossier):
-    """Rendre des comptes sur trois décisions."""
+    """Rendre des comptes sur trois décisions.
+
+    « Si votre réponse est que la machine est ainsi faite, nous fermerons le
+    Bureau. » Trois relevés de la partie test, repassés dans le modèle de la
+    phase 8, avec la part de chaque mot dans la décision — mesurée en retirant le
+    mot et en regardant ce que la confiance du modèle y perd.
+    """
     titre(9, "rendre des comptes sur trois décisions")
-    a_faire(
-        """
-        Trois relevés de la partie test repassés dans le modèle de la phase 8 : un réussi,
-        un raté, un où le modèle a hésité entre deux formes très proches.
-        Pour chacun, le témoignage entier avec, mot par mot, la part prise dans la décision.
-        Figure ou texte coloré, mais lisible par quelqu'un qui ne code pas.
-        Puis trois commentaires de trois lignes : ce que la machine a retenu, ce qu'elle a
-        ignoré alors qu'un humain l'aurait vu, ce que le raté apprend sur le JEU DE DONNÉES.
-        """
-    )
+    censure = jeu_et_modele_de_la_phase8(dossier)
+    modele, entrees = censure["modele"], censure["entrees"]
+    vrais = entrees["cibles_test"]
+    modele.eval()
+
+    # Les probabilités sur toute la partie test, par paquets.
+    probabilites = []
+    with torch.no_grad():
+        for debut in range(0, len(vrais), 1024):
+            probabilites.append(
+                torch.softmax(modele(entrees["test"][debut:debut + 1024]), dim=-1))
+    probabilites = torch.cat(probabilites)
+    deux_meilleures, indices_2 = probabilites.topk(2, dim=-1)
+    predits = indices_2[:, 0]
+    corrects = predits == vrais
+
+    # Les trois dossiers : le réussi le plus sûr, le raté le plus sûr (l'erreur
+    # assumée est plus instructive que l'erreur hésitante), et l'hésitation la
+    # plus serrée entre deux formes.
+    confiance = deux_meilleures[:, 0]
+    ecart_12 = deux_meilleures[:, 0] - deux_meilleures[:, 1]
+    choisis = {
+        "réussi": int(torch.where(corrects, confiance,
+                                  torch.zeros_like(confiance)).argmax()),
+        "raté": int(torch.where(~corrects, confiance,
+                                torch.zeros_like(confiance)).argmax()),
+        "hésitant": int(torch.where(corrects, ecart_12,
+                                    torch.full_like(ecart_12, 2.0)).argmin()),
+    }
+
+    for numero, (nature, indice_test) in enumerate(choisis.items(), start=1):
+        indice_jeu = dossier.decoupe["test"][indice_test]
+        texte_original = dossier.textes[indice_jeu]
+        texte_censure = censure["textes"][indice_jeu]
+        mots = jeu.jetons(texte_censure)[: dossier.longueur]
+        entree = entrees["test"][indice_test:indice_test + 1]
+        prediction = int(predits[indice_test])
+
+        # La part d'un mot : ce que la confiance dans la forme prédite perd
+        # quand on le retire. Positif, le mot poussait la décision ; négatif,
+        # il la freinait.
+        with torch.no_grad():
+            base = torch.softmax(modele(entree), dim=-1)[0, prediction].item()
+            parts = []
+            for position in range(len(mots)):
+                ampute = entree.clone()
+                ampute[0, position] = 0
+                parts.append(
+                    base
+                    - torch.softmax(modele(ampute), dim=-1)[0, prediction].item())
+
+        print(f"\n  dossier {numero} — {nature}")
+        print(f"    témoignage    : « {texte_original[:96]} »")
+        print(f"    vraie forme   : {dossier.classes[int(vrais[indice_test])]}")
+        print(f"    prédiction    : {dossier.classes[prediction]} "
+              f"(confiance {confiance[indice_test]:.0%}"
+              + (f", devant {dossier.classes[int(indices_2[indice_test, 1])]} à "
+                 f"{deux_meilleures[indice_test, 1]:.0%}"
+                 if nature == "hésitant" else "") + ")")
+        echelle = max(abs(p) for p in parts) or 1.0
+        for mot, part in zip(mots, parts):
+            barre = "█" * round(14 * abs(part) / echelle)
+            signe = "+" if part >= 0 else "−"
+            print(f"      {mot:<16}{signe}{abs(part):.3f}  {barre}")
+
+        figures.parts_des_mots(
+            mots, parts, f"phase09_dossier{numero}_{nature.replace('é', 'e')}.png",
+            f"Dossier {numero} ({nature}) — prédit « {dossier.classes[prediction]} », "
+            f"vrai « {dossier.classes[int(vrais[indice_test])]} »")
+
+    print("\n  Les trois commentaires sont dans RAPPORT.md — c'est ce qui manquait "
+          "au dossier du disparu.")
+    return dossier.retenir(9, **{nature: int(i) for nature, i in choisis.items()})

@@ -4,7 +4,7 @@
 > relançant. Les décisions qui ont mal tourné y sont aussi : un rapport qui ne
 > contient que des réussites est incomplet.
 >
-> Phases traitées : 0 à 5.
+> Phases traitées : 0 à 6.
 
 ---
 
@@ -487,14 +487,71 @@ report de la facture.
 
 ### Phase 6 — le champ de vision du modèle
 
-Longueur en jetons : médiane **12**, retenue **29** (99e centile), maximum 35.
+La contrainte de la salle des calculs est respectée par construction : le montage
+est fait de convolutions, chaque position est traitée en même temps que toutes les
+autres, aucune n'attend la précédente.
 
-| Couche | Ce qu'elle ajoute à l'étendue vue | Cumul |
-|---|---|---|
+Longueur maximale acceptée en entrée : **29 jetons** (le 99ᵉ centile ; le plus
+long relevé du fichier en fait 35, il est tronqué). Longueur médiane : **12**.
 
-**À rendre :** la comparaison du cumul à la longueur maximale en une ligne, la
-vérification expérimentale (changer un mot au tout début fait bouger la sortie),
-puis le score comparé à la phase 3.
+#### Le tableau, avant tout entraînement
+
+Une convolution de fenêtre 3 ne voit que 3 positions : pour couvrir 29 positions
+en empilant des fenêtres ordinaires, il faudrait quatorze couches. J'espace donc
+les fenêtres — la dilatation double à chaque couche, et l'étendue vue par une
+sortie grandit exponentiellement avec la profondeur :
+
+| Couche | Dilatation | Ce qu'elle ajoute | Cumul |
+|---|---|---|---|
+| 1 | 1 | 2 | 3 |
+| 2 | 2 | 4 | 7 |
+| 3 | 4 | 8 | 15 |
+| 4 | 8 | 16 | 31 |
+
+**Étendue totale 31 > longueur maximale 29** : la position centrale d'un relevé
+voit ses 29 positions, et le maximum final fait dépendre la sortie de toutes.
+
+#### La vérification expérimentale, modèle encore vierge
+
+Sur le relevé le plus long du jeu (« I was on my way to bed n I sleep next to the
+window n when I lay… »), le premier mot est remplacé par un autre, et on mesure ce
+qui bouge — sur le modèle **non entraîné**, comme l'exige l'énoncé :
+
+- la sortie du classement bouge : écart maximal de 0,004 sur les logits ;
+- la modification se propage jusqu'à la position 16 : **rayon mesuré 15, rayon
+  théorique 15** — l'expérience tombe exactement sur le calcul.
+
+#### Puis on entraîne, et l'énoncé avait raison : empiler dégrade
+
+Trois configurations, trois initialisations chacune, réglages de la phase 5 :
+
+| Montage | Init 0 | Init 1 | Init 2 | Pire essai |
+|---|---|---|---|---|
+| empilement nu | 0,5228 / 0,4614 | 0,5280 / 0,4741 | 0,5282 / 0,4831 | 0,5228 / 0,4614 ✗ |
+| + connexions résiduelles | 0,5396 / 0,5072 | 0,5394 / 0,5018 | 0,5387 / 0,5020 | **0,5387 / 0,5018 ✓** |
+| + résidu + normalisation par lot | 0,5397 / 0,5056 | 0,5349 / 0,5007 | 0,5362 / 0,5004 | 0,5349 / 0,5004 ✗ |
+
+(plancher de la phase 3 : 0,5385 / 0,4975 ; figures `phase06_sans_residu.png`,
+`phase06_avec_residu.png`, `phase06_residu_et_norme.png`)
+
+**Le problème connu, et sa solution.** L'empilement nu perd 0,016 de taux et 0,04
+de F1 : en traversant quatre couches, le gradient s'affaiblit et les premières
+couches n'apprennent presque plus. La solution connue, ce sont les **connexions
+résiduelles** — chaque couche apprend un écart plutôt qu'une transformation
+entière, et le gradient garde un chemin direct vers l'entrée. Appliquées, elles
+récupèrent tout : les trois initialisations repassent au-dessus du plancher.
+
+**La recette standard complète a aussi été mesurée, et écartée.** Les empilements
+profonds s'accompagnent d'ordinaire d'une normalisation par lot. Ajoutée au
+résidu, elle donne un pire essai à 0,5349 — sous le plancher. La règle de
+rétention, fixée avant la mesure, tranche : **montage retenu, résidu seul**. La
+normalisation reviendra en phase 7, où le Conseil demandera précisément ce qui,
+dans un montage, a le droit de dépendre des autres relevés du lot.
+
+Le montage couvre le relevé entier et s'entraîne encore : la phase est validée,
+au prix d'une leçon — la profondeur ne se paie pas en score si le gradient a son
+chemin, mais elle se paie en temps (≈ 180 s l'entraînement, contre 40 s pour une
+couche en phase 5).
 
 ### Phase 7 — quatre relevés à la fois
 
