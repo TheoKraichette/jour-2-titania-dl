@@ -107,10 +107,10 @@ def mots_interdits(classes):
         mot = nom.lower()
         interdits.update({mot, mot + "s", mot + "es"})
         if mot.endswith("e"):
-            interdits.add(mot[:-1] + "ing")  # triangle → triangling, changed → changing
+            interdits.add(mot[:-1] + "ing")  # change → changing
     # TODO phase 8 : compléter à la main les variantes que la morphologie rate
-    # (light/lights/lighted, fireball/fire ball, cigar-shaped…), les défendre
-    # dans le rapport, puis vérifier par le code qu'il en reste zéro.
+    # (lights/lighted, fire ball, cigar-shaped, triangular…), les défendre dans
+    # le rapport, puis vérifier par le code qu'il en reste zéro.
     return interdits
 
 

@@ -11,60 +11,6 @@ import torch
 from torch import nn
 
 
-class SacDeMots(nn.Module):
-    """Le montage de départ : chaque mot devient un vecteur, on résume le relevé.
-
-    Il ignore complètement l'ordre — c'est assumé et c'est le point de départ de
-    l'acte 3, où le Conseil demandera si « elle » sait qu'il s'agit de « la lumière ».
-
-    Deux résumés côte à côte plutôt qu'un seul. La moyenne dit de quoi parle
-    l'ensemble du relevé ; le maximum dit si un mot déterminant est présent
-    quelque part. Sur des témoignages de douze mots, la moyenne seule dilue le mot
-    qui décide dans les onze autres.
-    """
-
-    def __init__(self, taille_vocabulaire, nombre_classes, dimension=64, cachee=128,
-                 oubli=0.0, avec_maximum=True, resume="moyenne"):
-        super().__init__()
-        self.vecteurs = nn.Embedding(taille_vocabulaire, dimension, padding_idx=0)
-        self.avec_maximum = avec_maximum
-        # « moyenne » efface le nombre de fois qu'un mot apparaît et la longueur du
-        # relevé — or c'est précisément l'information sur laquelle le linéaire du
-        # service statistique travaille. « somme » la rend au réseau, « racine »
-        # la rend en limitant l'avantage des relevés longs.
-        self.resume = resume
-        self.tete = nn.Sequential(
-            nn.Dropout(oubli),
-            nn.Linear(dimension * (2 if avec_maximum else 1), cachee),
-            nn.ReLU(),
-            nn.Dropout(oubli),
-            nn.Linear(cachee, nombre_classes),
-        )
-
-    def forward(self, jetons):
-        vecteurs = self.vecteurs(jetons)
-        presents = (jetons != 0).unsqueeze(-1)
-        compte = presents.sum(dim=1).clamp(min=1)
-        somme = (vecteurs * presents).sum(dim=1)
-        # La somme des vecteurs de mots EST le sac de mots projeté : elle garde le
-        # nombre d'occurrences et la longueur du relevé. La moyenne les efface.
-        resume = {
-            "somme": somme,
-            "moyenne": somme / compte,
-            "racine": somme / compte.sqrt(),
-        }[self.resume]
-        if self.avec_maximum:
-            # Le remplissage est mis hors jeu avant le maximum, sinon un relevé
-            # court verrait ses zéros de remplissage gagner le maximum.
-            masque = vecteurs.masked_fill(~presents, float("-inf"))
-            # Un relevé sans un seul jeton connu a toutes ses positions masquées :
-            # son maximum vaut -inf et suffit à mettre toute la perte à NaN.
-            # Il existe : des témoignages ne contiennent que des entités HTML.
-            maximum = masque.max(dim=1).values.nan_to_num(neginf=0.0)
-            resume = torch.cat([resume, maximum], dim=-1)
-        return self.tete(resume)
-
-
 class Empilement(nn.Module):
     """Le montage qui a un avantage que le comptage ne peut pas avoir : l'ordre.
 
@@ -75,9 +21,9 @@ class Empilement(nn.Module):
 
     Chaque couche fait glisser une fenêtre sur le relevé et combine les positions
     voisines. Les poids sont partagés entre toutes les positions, donc le montage
-    apprend une tournure (« bright light », « shaped object ») au lieu de retenir un
-    relevé — c'est ce qui manquait à la voie large, qui utilisait les paires rares
-    comme empreintes.
+    apprend une tournure (« bright light », « shaped object ») au lieu de retenir
+    un relevé — donner les paires de mots comme jetons à part avait précisément
+    échoué là-dessus, les paires rares servant d'empreintes des relevés.
 
     Toutes les positions sont traitées de front, jamais l'une après l'autre : la
     contrainte de la phase 6 est déjà respectée ici. Chaque couche ajoute

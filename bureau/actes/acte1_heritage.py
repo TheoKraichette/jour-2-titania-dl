@@ -6,7 +6,7 @@ Phase 0 : refaire les calculs du disparu. Phase 1 : dire ce qu'ils ne disaient p
 import polars as pl
 
 from bureau import figures
-from bureau.contexte import a_faire, titre
+from bureau.contexte import titre
 
 # Les quatre affirmations laissées sur le bureau. Elles sont justes : le code doit
 # retomber dessus, sans les recopier. Servent de contrôle, pas de source.
