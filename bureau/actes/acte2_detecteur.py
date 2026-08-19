@@ -202,7 +202,7 @@ def service_statistique(dossier, tenseurs_par_partie):
     )
 
 
-def phase03(dossier, iterations=12):
+def phase03(dossier, iterations=30):
     """Battre le service statistique.
 
     Trois scores côte à côte, sur exactement la même découpe et les mêmes classes :
